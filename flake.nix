@@ -16,6 +16,7 @@
       # Add Rust and Cargo to the environment
       buildInputs = [
         pkgs.rustup
+        pkgs.zsh
       ];
 
       # Optionally, set environment variables
@@ -24,6 +25,11 @@
 
       # Optional shellHook to fetch dependencies when entering the shell
       shellHook = ''
+        # Start Zsh if not already the active shell
+        if [ "$SHELL" != "$(command -v zsh)" ]; then
+          export SHELL="$(command -v zsh)"
+          exec zsh
+        fi
         echo "Entering Rust development environment..."
         rustup default nightly
         cargo install rerun-cli
