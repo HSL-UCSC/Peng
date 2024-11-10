@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2021 ilkecan <ilkecan@protonmail.com>
+#
+# SPDX-License-Identifier: MPL-2.0
+
+/Cargo.lock
+/target/

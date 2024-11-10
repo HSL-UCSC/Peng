@@ -1,0 +1,26 @@
+[package]
+name = "arrow-format"
+version = "0.8.1"
+edition = "2018"
+license = "Apache-2.0"
+homepage = "https://github.com/DataEngineeringLabs/arrow-format"
+repository = "https://github.com/DataEngineeringLabs/arrow-format"
+authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>"]
+keywords = [ "arrow", "analytics" ]
+description = "Unofficial flatbuffers and tonic code of Apache Arrow spec"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+planus = { version = "0.3.1", optional = true }
+serde = { version = "1", optional = true, default-features = false, features = ["derive", "std"] }
+tonic = { version = "0.8.0", optional = true }
+prost = { version = "0.11.0", optional = true }
+prost-derive = { version = "0.11.0", optional = true }
+
+[features]
+default = []
+full = ["ipc", "flight-data", "flight-service"]
+flight-data = ["prost", "prost-derive"]
+flight-service = ["flight-data", "tonic"]
+ipc = ["planus", "serde"]

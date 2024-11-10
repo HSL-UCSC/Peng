@@ -1,0 +1,49 @@
+# Copyright © 2018–2024 Trevor Spiteri
+
+# Copying and distribution of this file, with or without modification,
+# are permitted in any medium without royalty provided the copyright
+# notice and this notice are preserved. This file is offered as-is,
+# without any warranty.
+
+[package]
+name = "fixed"
+version = "1.27.0"
+categories = ["algorithms", "embedded", "mathematics", "no-std"]
+description = "Fixed-point numbers."
+documentation = "https://docs.rs/fixed"
+edition = "2021"
+keywords = ["dsp", "embedded", "fixed", "math", "numerics"]
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://gitlab.com/tspiteri/fixed"
+rust-version = "1.71"
+
+[dependencies]
+arbitrary = { optional = true, version = "1" }
+az = "1.2"
+borsh = { default-features = false, optional = true, version = "1" }
+bytemuck = "1.2"
+half = { default_features = false, version = ">= 1.8, < 3" }
+num-traits = { default-features = false, features = ["i128"], optional = true, version = "0.2.15" }
+serde = { default-features = false, optional = true, version = "1.0.60" }
+typenum = "1.14"
+
+[features]
+arbitrary = ["dep:arbitrary"]
+borsh = ["dep:borsh"]
+serde = ["dep:serde"]
+serde-str = ["serde", "serde/std", "std"]
+std = []
+
+# experimental features
+num-traits = ["dep:num-traits"]
+
+# deprecated features
+az = []
+f16 = []
+
+# undocumented features
+fail-on-warnings = []
+
+[package.metadata.docs.rs]
+features = ["arbitrary", "borsh", "num-traits", "serde", "std"]

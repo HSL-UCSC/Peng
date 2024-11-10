@@ -1,0 +1,41 @@
+# based on https://github.com/dtolnay/anyhow/blob/master/.github/workflows/ci.yml
+
+name: Rust
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  test:
+    name: Rust ${{matrix.rust}}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [nightly, beta, stable]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{matrix.rust}}
+          components: rust-src
+      - run: cargo test
+      - run: cargo check --no-default-features
+      - run: cargo check --features serde
+      - run: cargo check --features bytemuck
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy, rust-src
+      - run: cargo clippy --tests -- -Dclippy::all

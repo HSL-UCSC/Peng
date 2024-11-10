@@ -1,0 +1,10 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: indent
+Upstream-Contact: ilkecan <ilkecan@protonmail.com>
+Source: https://git.sr.ht/~ilkecan/indent-rs
+
+# Sample paragraph, commented out:
+#
+# Files: src/*
+# Copyright: $YEAR $NAME <$CONTACT>
+# License: ...
