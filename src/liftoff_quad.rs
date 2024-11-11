@@ -1,12 +1,12 @@
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
-use nalgebra::{zero, Matrix3, Quaternion, Rotation3, SMatrix, Unit, UnitQuaternion, Vector3};
 use nalgebra::{Matrix3, Matrix4, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
 use peng_quad::config::{Config, LiftoffConfiguration, QuadrotorConfig};
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
 use peng_quad::{quadrotor::MultirotorInterface, SimulationError};
 use rand;
+use serialport::{available_ports, SerialPort, SerialPortBuilder, SerialPortType};
 use std::net::UdpSocket;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -114,7 +114,9 @@ impl LiftoffQuad {
             )
             .await;
         });
+        let writer = Writer("COM3".to_string(), 115200);
         Ok(Self {
+            writer: writer,
             state: QuadrotorState::default(),
             last_state: QuadrotorState::default(),
             config: vehicle_config.clone(),

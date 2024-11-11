@@ -17,7 +17,7 @@ pub struct QuadrotorState {
 /// Types implementing this trait can be used as a quadrotor in the simulation.
 /// The underlying model can be internal or external to the simulator.
 pub trait QuadrotorInterface {
-    fn control(&mut self, step_number: usize, config: &Config, thrust: f32, torque: &Vector3<f32>);
+    fn control(&mut self, step_number: usize, config: &Config, thrust: f32, torque: &Vector3<f32>) -> Result<(), SimulationError>;
 
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError>;
 }
