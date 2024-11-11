@@ -1,12 +1,12 @@
 #![feature(thread_sleep_until)]
 use nalgebra::Vector3;
+use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::*;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
 mod liftoff_quad;
-mod rc_quad;
 
 /// Main function for the simulation
 fn main() -> Result<(), SimulationError> {
@@ -23,7 +23,7 @@ fn main() -> Result<(), SimulationError> {
         config_str = &args[1];
     }
     let config = config::Config::from_yaml(config_str).expect("Failed to load configuration");
-    let mut quad = SimulatedQuadrotor::new(
+    let mut quad = Quadrotor::new(
         1.0 / config.simulation.simulation_frequency as f32,
         config.quadrotor.mass,
         config.quadrotor.gravity,
