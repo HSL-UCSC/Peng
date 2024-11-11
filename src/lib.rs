@@ -19,7 +19,9 @@
 use rand::SeedableRng;
 use rayon::prelude::*;
 pub mod config;
+pub mod quadrotor;
 use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
+use quadrotor::{QuadrotorInterface, QuadrotorState};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use std::f32::consts::PI;
@@ -49,28 +51,6 @@ pub enum SimulationError {
     OtherError(String),
 }
 
-pub trait Quadrotor {
-    fn control(
-        &mut self,
-        step_number: usize,
-        config: &config::Config,
-        thrust: f32,
-        torque: &Vector3<f32>,
-    );
-
-    fn observe(
-        &self,
-    ) -> Result<
-        (
-            Vector3<f32>,
-            Vector3<f32>,
-            UnitQuaternion<f32>,
-            Vector3<f32>,
-        ),
-        SimulationError,
-    >;
-}
-
 /// Represents a quadrotor with its physical properties and state
 /// # Example
 /// ```
@@ -80,7 +60,7 @@ pub trait Quadrotor {
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
 /// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix);
 /// ```
-pub struct SimulatedQuadrotor {
+pub struct Quadrotor {
     /// Current position of the quadrotor in 3D space
     pub position: Vector3<f32>,
     /// Current velocity of the quadrotor
@@ -107,7 +87,7 @@ pub struct SimulatedQuadrotor {
     pub previous_torque: Vector3<f32>,
 }
 
-impl Quadrotor for SimulatedQuadrotor {
+impl QuadrotorInterface for Quadrotor {
     fn control(
         &mut self,
         step_number: usize,
@@ -136,28 +116,18 @@ impl Quadrotor for SimulatedQuadrotor {
             }
         }
     }
-    fn observe(
-        &self,
-    ) -> Result<
-        (
-            Vector3<f32>,
-            Vector3<f32>,
-            UnitQuaternion<f32>,
-            Vector3<f32>,
-        ),
-        SimulationError,
-    > {
-        return Ok((
-            self.position,
-            self.velocity,
-            self.orientation,
-            self.angular_velocity,
-        ));
+    fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
+        return Ok(QuadrotorState {
+            position: self.position,
+            velocity: self.velocity,
+            orientation: self.orientation,
+            angular_velocity: self.angular_velocity,
+        });
     }
 }
 
 /// Implementation of the Quadrotor struct
-impl SimulatedQuadrotor {
+impl Quadrotor {
     /// Creates a new Quadrotor with default parameters
     /// # Arguments
     /// * `time_step` - The simulation time step in seconds
@@ -1804,7 +1774,7 @@ pub fn update_planner(
     step: usize,
     time: f32,
     simulation_frequency: usize,
-    quad: &SimulatedQuadrotor,
+    quad: &Quadrotor,
     obstacles: &[Obstacle],
     planner_config: &[PlannerStepConfig],
 ) -> Result<(), SimulationError> {
@@ -1854,7 +1824,7 @@ pub fn update_planner(
 /// ```
 pub fn create_planner(
     step: &PlannerStepConfig,
-    quad: &SimulatedQuadrotor,
+    quad: &Quadrotor,
     time: f32,
     obstacles: &[Obstacle],
 ) -> Result<PlannerType, SimulationError> {
@@ -2407,7 +2377,7 @@ impl Camera {
 /// ```
 pub fn log_data(
     rec: &rerun::RecordingStream,
-    quad: &SimulatedQuadrotor,
+    quad: &Quadrotor,
     desired_position: &Vector3<f32>,
     desired_velocity: &Vector3<f32>,
     measured_accel: &Vector3<f32>,
