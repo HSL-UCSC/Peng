@@ -1,10 +1,9 @@
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
-use nalgebra::{Matrix3, Matrix4, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
-use peng_quad::config::{Config, LiftoffConfiguration, QuadrotorConfig};
+use nalgebra::{Matrix4, Quaternion, Unit, UnitQuaternion, Vector3};
+use peng_quad::config::{LiftoffConfiguration, QuadrotorConfig};
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
-use peng_quad::{quadrotor::MultirotorInterface, SimulationError};
 use rand;
 use serialport::{available_ports, SerialPort, SerialPortBuilder, SerialPortType};
 use std::net::UdpSocket;
@@ -53,11 +52,12 @@ impl QuadrotorInterface for LiftoffQuad {
         torque: &Vector3<f32>,
     ) -> Result<(), SimulationError> {
         // Given thrust and torque, calculate the control inputs
-
-        let rc_data = control_inputs_to_rc_commands(thrust, torque);
-
         self.writer
-            .write(rc_data)
+            .write(control_inputs_to_rc_commands(
+                config.quadrotor.clone(),
+                thrust,
+                torque,
+            ))
             .map_err(|e| SimulationError::OtherError(e.to_string()))?;
         Ok(())
     }
@@ -114,7 +114,8 @@ impl LiftoffQuad {
             )
             .await;
         });
-        let writer = Writer("COM3".to_string(), 115200);
+        let writer = Writer::new("COM3".to_string(), 115200)
+            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
         Ok(Self {
             writer: writer,
             state: QuadrotorState::default(),
@@ -209,21 +210,43 @@ async fn feedback_loop(
                 ));
             }
         }
+    }
+}
+
+fn normalize(value: f32, min: f32, max: f32) -> f32 {
+    (value - min) / (max - min)
+}
+
 fn scale_to_rc_command(value: f32, min_output: f32, max_output: f32, center: f32) -> i32 {
     let scaled_value = value * (max_output - center) + center;
     scaled_value.clamp(min_output, max_output) as i32
 }
 
-fn control_inputs_to_rc_commands(thrust: f32, torque: &Vector3<f32>) -> cyberrc::RcData {
+fn scale_throttle(thrust: f32) -> i32 {
+    scale_to_rc_command(thrust, 1000.0, 2000.0, 1500.0)
+}
+
+fn scale_control(value: f32) -> i32 {
+    scale_to_rc_command(value, 1000.0, 2000.0, 1500.0)
+}
+
+fn control_inputs_to_rc_commands(
+    quadrotor_config: QuadrotorConfig,
+    thrust: f32,
+    torque: &Vector3<f32>,
+) -> cyberrc::RcData {
     let roll_torque = torque[0];
     let pitch_torque = torque[1];
     let yaw_torque = torque[2];
 
+    // TODO: what cases will we have this be non zero
+    let max_torques = quadrotor_config.max_torques();
+
     // Normalize inputs
-    let normalized_thrust = normalize(thrust, MIN_THRUST_KG, MAX_THRUST_KG);
-    let normalized_roll = normalize_torque(roll_torque, TAU_PHI_MAX);
-    let normalized_pitch = normalize_torque(pitch_torque, TAU_THETA_MAX);
-    let normalized_yaw = normalize_torque(yaw_torque, TAU_PSI_MAX);
+    let normalized_thrust = normalize(thrust, 0.0, quadrotor_config.max_thrust_kg);
+    let normalized_roll = normalize(roll_torque, -max_torques.0, max_torques.0);
+    let normalized_pitch = normalize(pitch_torque, -max_torques.1, max_torques.1);
+    let normalized_yaw = normalize(yaw_torque, -max_torques.2, max_torques.2);
 
     // Scale to RC commands
     let throttle_command = scale_throttle(normalized_thrust);
