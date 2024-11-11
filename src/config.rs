@@ -104,6 +104,26 @@ pub struct QuadrotorConfig {
     pub drag_coefficient: f32,
     /// Inertia matrix in kg*m^2
     pub inertia_matrix: [f32; 9],
+    /// Maximum thrust in kilograms
+    pub max_thrust_kg: f32,
+    /// Arm length in meters
+    pub arm_length_m: f32,
+    /// Yaw torque constant
+    pub yaw_torque_constant: f32,
+}
+
+impl Default for QuadrotorConfig {
+    fn default() -> Self {
+        QuadrotorConfig {
+            mass: 1.3,
+            gravity: 9.81,
+            drag_coefficient: 0.000,
+            inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
+            max_thrust_kg: 1.3 * 2.5,
+            arm_length_m: 0.150,
+            yaw_torque_constant: 0.05,
+        }
+    }
 }
 
 impl QuadrotorConfig {
@@ -118,6 +138,14 @@ impl QuadrotorConfig {
             .ok_or(SimulationError::NalgebraError(
                 "Failed to invert inertia matrix".to_string(),
             ))?)
+    }
+
+    /// Calculate all maximum torques and return them as a tuple
+    pub fn max_torques(&self) -> (f32, f32, f32) {
+        let motor_thrust = self.max_thrust_kg / 4.0;
+        let max_rp_torque = 2.0 * self.arm_length_m * motor_thrust;
+        let yaw_torque = 2.0 * self.yaw_torque_constant * motor_thrust;
+        (max_rp_torque, max_rp_torque, yaw_torque)
     }
 }
 
