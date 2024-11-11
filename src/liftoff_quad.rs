@@ -8,6 +8,17 @@ use std::net::UdpSocket;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
+use cyber_rc::{cyberrc, Writer};
+use nalgebra::{Matrix3, Matrix4, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
+use peng_quad::{quadrotor::MultirotorInterface, SimulationError};
+
+#[rustfmt::skip]
+const MOTOR_MIXING_MATRIX: Matrix4<f32> = Matrix4::new(
+    1.0, 1.0, 1.0, 1.0,
+    -1.0, 1.0, -1.0, 1.0,
+    -1.0, -1.0, 1.0, 1.0,
+    1.0, -1.0, -1.0, 1.0,
+);
 
 /// Represents an RC quadrotor
 /// # Example
@@ -19,6 +30,8 @@ use tokio::time::{sleep, Duration};
 /// let quadrotor = RCQuad::new(time_step, mass, inertia_matrix);
 /// ```
 pub struct LiftoffQuad {
+    /// The serial writer to communicate with the quadrotor
+    pub writer: Writer,
     /// Current position of the quadrotor in 3D space
     pub position: Vector3<f32>,
     pub last_position: Vector3<f32>,
@@ -49,6 +62,22 @@ impl QuadrotorInterface for LiftoffQuad {
     fn control(&mut self, step_number: usize, config: &Config, thrust: f32, torque: &Vector3<f32>) {
         // TODO: implement control outputs to CyberRC - gamepad mode
         // todo!("implement control outputs to CyberRC - gamepad mode")
+impl MultirotorInterface for LiftoffQuad {
+    fn control(
+        &mut self,
+        step_number: usize,
+        config: &peng_quad::config::Config,
+        thrust: f32,
+        torque: &Vector3<f32>,
+    ) -> Result<(), SimulationError> {
+        // Given thrust and torque, calculate the control inputs
+
+        let rc_data = control_inputs_to_rc_commands(thrust, torque);
+
+        self.writer
+            .write(rc_data)
+            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+        Ok(())
     }
 
     /// Observe the current state of the quadrotor

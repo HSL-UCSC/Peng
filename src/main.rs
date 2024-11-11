@@ -127,7 +127,7 @@ fn main() -> Result<(), SimulationError> {
             &quad.angular_velocity,
             quad.time_step,
         );
-        quad.control(i, &config, thrust, &torque);
+        let _ = quad.control(i, &config, thrust, &torque);
         imu.update(quad.time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
         let (_measured_accel, _measured_gyro) = imu.read(true_accel, true_gyro)?;
@@ -146,6 +146,7 @@ fn main() -> Result<(), SimulationError> {
                 if trajectory.add_point(quad.position) {
                     log_trajectory(rec, &trajectory)?;
                 }
+                log_joy(rec, thrust, &torque)?;
                 log_data(
                     rec,
                     &quad,
@@ -153,6 +154,8 @@ fn main() -> Result<(), SimulationError> {
                     &desired_velocity,
                     &_measured_accel,
                     &_measured_gyro,
+                    thrust,
+                    &torque,
                 )?;
                 if config.render_depth {
                     log_depth_image(

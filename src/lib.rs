@@ -94,7 +94,7 @@ impl QuadrotorInterface for Quadrotor {
         config: &config::Config,
         thrust: f32,
         torque: &Vector3<f32>,
-    ) {
+    ) -> Result<(), SimulationError> {
         if step_number
             % (config.simulation.simulation_frequency / config.simulation.control_frequency)
             == 0
@@ -115,6 +115,7 @@ impl QuadrotorInterface for Quadrotor {
                 self.update_dynamics_with_controls_euler(previous_thrust, &previous_torque);
             }
         }
+        Ok(())
     }
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
         return Ok(QuadrotorState {
@@ -2382,11 +2383,25 @@ pub fn log_data(
     desired_velocity: &Vector3<f32>,
     measured_accel: &Vector3<f32>,
     measured_gyro: &Vector3<f32>,
+    thrust: f32,
+    torque: &Vector3<f32>,
 ) -> Result<(), SimulationError> {
     rec.log(
         "world/quad/desired_position",
         &rerun::Points3D::new([(desired_position.x, desired_position.y, desired_position.z)])
             .with_radii([0.1])
+            .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
+    )?;
+    rec.log(
+        "world/quad/desired_torque",
+        &rerun::Points3D::new([(torque.x, torque.y, torque.z)])
+            .with_radii([0.1])
+            .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
+    )?;
+    rec.log(
+        "world/quad/thrust",
+        &rerun::Points3D::new([(torque.x, torque.y, torque.z)])
+            .with_radii([0.2])
             .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
     )?;
     rec.log(
@@ -2412,6 +2427,7 @@ pub fn log_data(
         ("gyro", measured_gyro),
         ("desired_position", desired_position),
         ("desired_velocity", desired_velocity),
+        ("torque", torque),
     ] {
         for (i, a) in ["x", "y", "z"].iter().enumerate() {
             rec.log(format!("{}/{}", pre, a), &rerun::Scalar::new(vec[i] as f64))?;
@@ -2755,6 +2771,57 @@ pub fn color_map_fn(gray: f32) -> (u8, u8, u8) {
     let b = (27.2 + x * (3211.1 - x * (15327.97 - x * (27814.0 - x * (22569.18 - x * 6838.66)))))
         .clamp(0.0, 255.0) as u8;
     (r, g, b)
+}
+
+/// log joystick positions
+/// # Arguments
+/// * `rec` - The rerun::RecordingStream instance
+/// * `trajectory` - The Trajectory instance
+/// # Errors
+/// * If the data cannot be logged to the recording stream
+/// # Example
+/// ```no_run
+/// use peng_quad::{Trajectory, log_trajectory};
+/// use nalgebra::Vector3;
+/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
+/// let mut trajectory = Trajectory::new(nalgebra::Vector3::new(0.0, 0.0, 0.0));
+/// trajectory.add_point(nalgebra::Vector3::new(1.0, 0.0, 0.0));
+/// log_trajectory(&rec, &trajectory).unwrap();
+/// ```
+pub fn log_joy(
+    rec: &rerun::RecordingStream,
+    thrust: f32,
+    torque: &Vector3<f32>,
+) -> Result<(), SimulationError> {
+    let num_points = 100;
+    let radius = 1.0;
+    let circle_points: Vec<(f32, f32)> = (0..num_points)
+        .map(|i| {
+            let theta = i as f32 * 2.5 * PI / num_points as f32;
+            let x = radius * theta.cos();
+            let y = radius * theta.sin();
+            (x, y)
+        })
+        .collect();
+    rec.log_static(
+        "world/quad/joy/left",
+        &rerun::LineStrips2D::new([circle_points.clone()])
+            .with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    )?;
+    // rec.log(
+    //     "joy/right",
+    //     &rerun::LineStrips2D::new([circle_points])
+    //         .with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    // )?;
+    rec.log(
+        "world/quad/joy/left",
+        &rerun::Points2D::new([(0.0, 0.5)]).with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    )?;
+    // rec.log(
+    //     "joy/right",
+    //     &rerun::Points2D::new([(0.0, -0.5)]).with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    // )?;
+    Ok(())
 }
 
 /// Fast square root function
