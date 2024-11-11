@@ -234,6 +234,34 @@ async fn feedback_loop(
                 ));
             }
         }
+fn scale_to_rc_command(value: f32, min_output: f32, max_output: f32, center: f32) -> i32 {
+    let scaled_value = value * (max_output - center) + center;
+    scaled_value.clamp(min_output, max_output) as i32
+}
+
+fn control_inputs_to_rc_commands(thrust: f32, torque: &Vector3<f32>) -> cyberrc::RcData {
+    let roll_torque = torque[0];
+    let pitch_torque = torque[1];
+    let yaw_torque = torque[2];
+
+    // Normalize inputs
+    let normalized_thrust = normalize(thrust, MIN_THRUST_KG, MAX_THRUST_KG);
+    let normalized_roll = normalize_torque(roll_torque, TAU_PHI_MAX);
+    let normalized_pitch = normalize_torque(pitch_torque, TAU_THETA_MAX);
+    let normalized_yaw = normalize_torque(yaw_torque, TAU_PSI_MAX);
+
+    // Scale to RC commands
+    let throttle_command = scale_throttle(normalized_thrust);
+    let aileron_command = scale_control(normalized_roll);
+    let elevator_command = scale_control(normalized_pitch);
+    let rudder_command = scale_control(normalized_yaw);
+
+    cyberrc::RcData {
+        throttle: throttle_command,
+        aileron: aileron_command,
+        elevator: elevator_command,
+        rudder: rudder_command,
+        arm: 0,
+        mode: 0,
     }
-    Ok(())
 }
