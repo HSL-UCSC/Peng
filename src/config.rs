@@ -3,6 +3,11 @@
 //! This module contains the configuration for the simulation, quadrotor, PID controller, IMU, maze, camera, mesh, and planner schedule.
 //! The configuration is loaded from a YAML file using the serde library.
 //! The configuration is then used to initialize the simulation, quadrotor, PID controller, IMU, maze, camera, mesh, and planner schedule.
+
+use nalgebra::Matrix3;
+
+use crate::SimulationError;
+
 #[derive(serde::Deserialize)]
 /// Configuration for the simulation
 pub struct Config {
@@ -88,7 +93,7 @@ pub struct SimulationConfig {
     pub duration: f32,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
     /// Mass of the quadrotor in kg
@@ -99,6 +104,21 @@ pub struct QuadrotorConfig {
     pub drag_coefficient: f32,
     /// Inertia matrix in kg*m^2
     pub inertia_matrix: [f32; 9],
+}
+
+impl QuadrotorConfig {
+    pub fn inertia_matrix(&self) -> Matrix3<f32> {
+        Matrix3::from_row_slice(&self.inertia_matrix)
+    }
+
+    pub fn inverse_inertia_matrix(&self) -> Result<Matrix3<f32>, SimulationError> {
+        Ok(self
+            .inertia_matrix()
+            .try_inverse()
+            .ok_or(SimulationError::NalgebraError(
+                "Failed to invert inertia matrix".to_string(),
+            ))?)
+    }
 }
 
 #[derive(serde::Deserialize)]
