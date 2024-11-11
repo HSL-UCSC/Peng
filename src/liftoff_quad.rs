@@ -1,16 +1,16 @@
 use binrw::{binrw, BinRead};
+use cyber_rc::{cyberrc, Writer};
 use nalgebra::{zero, Matrix3, Quaternion, Rotation3, SMatrix, Unit, UnitQuaternion, Vector3};
+use nalgebra::{Matrix3, Matrix4, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
 use peng_quad::config::{Config, LiftoffConfiguration, QuadrotorConfig};
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
+use peng_quad::{quadrotor::MultirotorInterface, SimulationError};
 use rand;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
-use cyber_rc::{cyberrc, Writer};
-use nalgebra::{Matrix3, Matrix4, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
-use peng_quad::{quadrotor::MultirotorInterface, SimulationError};
 
 #[rustfmt::skip]
 const MOTOR_MIXING_MATRIX: Matrix4<f32> = Matrix4::new(
@@ -36,12 +36,6 @@ pub struct LiftoffQuad {
     pub time_step: f32,
     /// Configured physical parameters
     pub config: QuadrotorConfig,
-    /// Mass of the quadrotor in kg
-    pub mass: f32,
-    /// Inertia matrix of the quadrotor
-    pub inertia_matrix: Matrix3<f32>,
-    /// Inverse of the inertia matrix
-    pub inertia_matrix_inv: Matrix3<f32>,
     /// Previous Thrust
     pub previous_thrust: f32,
     /// Previous Torque
@@ -51,10 +45,6 @@ pub struct LiftoffQuad {
 }
 
 impl QuadrotorInterface for LiftoffQuad {
-    fn control(&mut self, step_number: usize, config: &Config, thrust: f32, torque: &Vector3<f32>) {
-        // TODO: implement control outputs to CyberRC - gamepad mode
-        // todo!("implement control outputs to CyberRC - gamepad mode")
-impl MultirotorInterface for LiftoffQuad {
     fn control(
         &mut self,
         step_number: usize,
