@@ -11,10 +11,10 @@ documentation = "https://docs.rs/peng_quad/latest/peng_quad"
 homepage = "https://github.com/makeecat/Peng"
 repository = "https://github.com/makeecat/Peng"
 categories = [
-    "science::robotics",
-    "aerospace::simulation",
-    "aerospace::unmanned-aerial-vehicles",
-    "algorithms",
+  "science::robotics",
+  "aerospace::simulation",
+  "aerospace::unmanned-aerial-vehicles",
+  "algorithms",
 ]
 keywords = ["quadrotor", "quadcopter", "robotics", "drone", "simulation"]
 readme = "README.md"
@@ -38,3 +38,5 @@ env_logger = "0.11.5"
 log = "0.4.22"
 rayon = "1.10.0"
 rand_chacha = "0.3.1"
+tokio = { version = "1.41.0", features = ["full"] }
+binrw = "0.14.1"
