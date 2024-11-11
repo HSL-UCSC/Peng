@@ -1,5 +1,0 @@
-error: expected one of "#", "crate", "pub", "rule", "use", "}"
- --> $DIR/syntax_error.rs:4:5
-  |
-4 |     fn asdf() {} //~ ERROR expected one of "#", "crate", "pub", "rule", "use", "}"
-  |     ^^

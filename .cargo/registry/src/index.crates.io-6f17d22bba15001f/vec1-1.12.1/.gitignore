@@ -1,6 +1,0 @@
-/target
-Cargo.lock
-.idea/
-.vscode/
-*.iml
-**/*.rs.bk
