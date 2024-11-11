@@ -20,30 +20,22 @@ const MOTOR_MIXING_MATRIX: Matrix4<f32> = Matrix4::new(
     1.0, -1.0, -1.0, 1.0,
 );
 
-/// Represents an RC quadrotor
+/// Represents a quadrotor in the game Liftoff
 /// # Example
 /// ```
-/// use nalgebra::Vector3;
-/// use peng_quad::Quadrotor;
-/// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
-/// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let quadrotor = RCQuad::new(time_step, mass, inertia_matrix);
+/// let quad = LiftoffQuad{ }
 /// ```
 pub struct LiftoffQuad {
     /// The serial writer to communicate with the quadrotor
     pub writer: Writer,
-    /// Current position of the quadrotor in 3D space
-    pub position: Vector3<f32>,
-    pub last_position: Vector3<f32>,
-    /// Current velocity of the quadrotor
-    pub velocity: Vector3<f32>,
-    /// Current orientation of the quadrotor
-    pub orientation: UnitQuaternion<f32>,
-    pub last_orientation: UnitQuaternion<f32>,
-    /// Current angular velocity of the quadrotor
-    pub angular_velocity: Vector3<f32>,
+    /// The current state of the quadrotor
+    pub state: QuadrotorState,
+    /// The last state of the quadrotor
+    pub last_state: QuadrotorState,
     /// Simulation time step in seconds
     pub time_step: f32,
+    /// Configured physical parameters
+    pub config: QuadrotorConfig,
     /// Mass of the quadrotor in kg
     pub mass: f32,
     /// Inertia matrix of the quadrotor
@@ -86,25 +78,29 @@ impl MultirotorInterface for LiftoffQuad {
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
         let mut data_lock = tokio::runtime::Handle::current().block_on(self.shared_data.lock());
         while let Some(sample) = data_lock.take() {
-            self.position = Vector3::from_row_slice(&sample.position);
-            self.velocity = (self.position - self.last_position) / self.time_step;
-            self.orientation = sample.attitude_quaternion();
-            let delta_q =
-                UnitQuaternion::new(self.last_orientation * self.last_position.conjugate());
+            // update the last state value
+            self.last_state = self.state.clone();
+            // store the sample values into templ variables
+            let position = Vector3::from_row_slice(&sample.position);
+            let velocity = (position - self.last_state.position) / self.time_step;
+            let orientation = sample.attitude_quaternion();
+            let delta_q = self.last_state.orientation * orientation.conjugate();
             let angle = 2.0 * delta_q.scalar().acos();
-            let angular_velocity = angle / self.time_step;
             let axis = delta_q
                 .axis()
                 .unwrap_or(Unit::new_normalize(Vector3::<f32>::zeros()));
-            self.angular_velocity = axis.scale(angular_velocity);
-            // Update last values for future velocity and angular velocity calculations
-            self.last_position = self.position;
-            self.last_orientation = self.orientation;
+            let angular_velocity = axis.scale(angle / self.time_step);
+            self.state = QuadrotorState {
+                position,
+                velocity,
+                orientation,
+                angular_velocity,
+            };
             return Ok(QuadrotorState {
-                position: self.position,
-                velocity: self.velocity,
-                orientation: self.orientation,
-                angular_velocity: self.angular_velocity,
+                position,
+                velocity,
+                orientation,
+                angular_velocity,
             });
         }
         todo!("implement state feedback from Liftoff UDP")
@@ -117,13 +113,6 @@ impl LiftoffQuad {
         vehicle_config: QuadrotorConfig,
         liftoff_config: LiftoffConfiguration,
     ) -> Result<Self, SimulationError> {
-        let inertia_matrix = Matrix3::from_row_slice(&vehicle_config.inertia_matrix);
-        let inertia_matrix_inv =
-            inertia_matrix
-                .try_inverse()
-                .ok_or(SimulationError::NalgebraError(
-                    "Failed to invert inertia matrix".to_string(),
-                ))?;
         let shared_data = Arc::new(Mutex::new(None));
         let shared_data_clone = Arc::clone(&shared_data);
         tokio::spawn(async move {
@@ -136,16 +125,10 @@ impl LiftoffQuad {
             .await;
         });
         Ok(Self {
-            position: Vector3::zeros(),
-            last_position: Vector3::zeros(),
-            velocity: Vector3::zeros(),
-            orientation: UnitQuaternion::identity(),
-            last_orientation: UnitQuaternion::identity(),
-            angular_velocity: Vector3::zeros(),
+            state: QuadrotorState::default(),
+            last_state: QuadrotorState::default(),
+            config: vehicle_config.clone(),
             time_step,
-            mass: vehicle_config.mass,
-            inertia_matrix,
-            inertia_matrix_inv,
             previous_thrust: 0.0,
             previous_torque: Vector3::zeros(),
             shared_data: Arc::new(Mutex::new(None)),
