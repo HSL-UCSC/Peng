@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::SimulationError;
 use nalgebra::{UnitQuaternion, Vector3};
 
+#[derive(Clone, Debug, Default)]
 /// Represents the state of a quadrotor
 pub struct QuadrotorState {
     pub position: Vector3<f32>,
