@@ -6,7 +6,6 @@ use std::time::Duration;
 use std::time::Instant;
 
 mod liftoff_quad;
-mod rc_quad;
 
 /// Main function for the simulation
 fn main() -> Result<(), SimulationError> {
