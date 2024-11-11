@@ -1,0 +1,3 @@
+# .gitconfig in your project directory
+[url "https://github.com/"]
+    insteadOf = git@github.com:
