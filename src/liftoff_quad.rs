@@ -154,53 +154,69 @@ impl LiftoffPacket {
     }
 }
 
+fn quaternion_ruf_to_ned(ruf_quat: UnitQuaternion<f32>) -> UnitQuaternion<f32> {
+    // Step 1: Flip the handedness by negating the Z component of the RUF quaternion.
+    let flipped_quat = Quaternion::new(ruf_quat.w, ruf_quat.i, ruf_quat.j, -ruf_quat.k);
+
+    // Step 2: Define a 90-degree rotation around the Y-axis to align X (Right) to X (North)
+    let rotation_y =
+        UnitQuaternion::from_axis_angle(&Vector3::y_axis(), std::f32::consts::FRAC_PI_2);
+
+    // Step 3: Define a -90-degree rotation around the X-axis to align Z (Forward) to Z (Down)
+    let rotation_x =
+        UnitQuaternion::from_axis_angle(&Vector3::x_axis(), -std::f32::consts::FRAC_PI_2);
+
+    // Step 4: Combine the handedness-adjusted quaternion with the rotation transformations
+    // Apply the Y rotation first, then the X rotation
+    rotation_x * rotation_y * UnitQuaternion::new_normalize(flipped_quat)
+}
+
+/// Translate Unity coordinates to NED coordinates
+pub fn vector3_ruf_to_ned(unity_position: Vector3<f32>) -> Vector3<f32> {
+    Vector3::new(unity_position[2], unity_position[0], -unity_position[1])
+}
+
 async fn feedback_loop(
     address: &str,
-    timeout: Duration,
-    max_retry_delay: Duration,
     data_lock: Arc<Mutex<Option<LiftoffPacket>>>,
 ) -> Result<(), SimulationError> {
-    let mut buf = [0; 256];
     let mut current_wait = Duration::from_secs(0);
     let mut delay = Duration::from_secs(2);
+    let max_wait = Duration::from_secs(60 * 5);
+    let max_delay = Duration::from_secs(30);
 
     loop {
+        let mut buf = [0; 128];
         match UdpSocket::bind(address) {
-            // Bind successful
             Ok(socket) => {
                 socket
                     .set_read_timeout(Some(Duration::from_secs(15)))
                     .map_err(|e| SimulationError::OtherError(e.to_string()))?;
-                current_wait = Duration::from_secs(0);
-                delay = Duration::from_secs(1);
-                // Read loop
-                loop {
-                    match socket.recv_from(&mut buf) {
-                        Ok((len, _)) => {
-                            let mut cursor = std::io::Cursor::new(&buf[..len]);
-                            // TODO: more robust handling of packet parsing errors during resets
-                            let sample = LiftoffPacket::read_be(&mut cursor)
-                                .expect("Failed to read LiftoffPacket");
+                match socket.recv_from(&mut buf) {
+                    Ok((len, _)) => {
+                        let mut cursor = std::io::Cursor::new(&buf[..len]);
+                        // TODO: more robust handling of packet parsing errors during resets
+                        if let Ok(sample) = LiftoffPacket::read(&mut cursor) {
+                            // TODO: RUF to NED orientation
+                            // TODO: apply transformation to position vector
                             let mut data_lock = data_lock.lock().await;
                             *data_lock = Some(sample);
                         }
-                        Err(_) => {
-                            if current_wait >= timeout {
-                                return Err(SimulationError::OtherError(
-                                    "Bind loop exceeded max wait time".into(),
-                                ));
-                            }
-                            current_wait += delay;
-                            sleep(
-                                delay
-                                    + Duration::from_millis(
-                                        (rand::random::<f64>() * 1000.0) as u64,
-                                    ),
-                            )
-                            .await;
-                            delay = (delay * 2).min(max_retry_delay);
-                            // break;
+                        current_wait = Duration::from_secs(0);
+                        delay = Duration::from_secs(2);
+                    }
+                    Err(e) => {
+                        if current_wait >= max_wait {
+                            return Err(SimulationError::OtherError(
+                                "Bind loop exceeded max wait time".into(),
+                            ));
                         }
+                        current_wait += delay;
+                        sleep(
+                            delay + Duration::from_millis((rand::random::<f64>() * 1000.0) as u64),
+                        )
+                        .await;
+                        delay = (delay * 2).min(max_delay);
                     }
                 }
             }
@@ -211,6 +227,7 @@ async fn feedback_loop(
             }
         }
     }
+    Ok(())
 }
 
 fn normalize(value: f32, min: f32, max: f32) -> f32 {
