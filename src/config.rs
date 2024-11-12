@@ -27,6 +27,8 @@ pub struct Config {
     pub mesh: MeshConfig,
     /// Planner schedule configuration
     pub planner_schedule: Vec<PlannerStep>,
+    /// Rerun blueprint path
+    pub rerun_blueprint: String,
     /// Use rerun.io for recording
     pub use_rerun: bool,
     /// Render depth
@@ -94,6 +96,7 @@ pub struct SimulationConfig {
 }
 
 #[derive(Clone, serde::Deserialize)]
+#[serde(default)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
     /// Mass of the quadrotor in kg
