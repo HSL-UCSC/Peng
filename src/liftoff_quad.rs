@@ -47,18 +47,40 @@ pub struct LiftoffQuad {
 impl QuadrotorInterface for LiftoffQuad {
     fn control(
         &mut self,
-        step_number: usize,
+        _: usize,
         config: &peng_quad::config::Config,
         thrust: f32,
         torque: &Vector3<f32>,
     ) -> Result<(), SimulationError> {
         // Given thrust and torque, calculate the control inputs
+        let roll_torque = torque[0];
+        let pitch_torque = torque[1];
+        let yaw_torque = torque[2];
+
+        let max_torques = config.quadrotor.max_torques();
+
+        // Normalize inputs
+        let normalized_thrust = normalize(thrust, 0.0, config.quadrotor.max_thrust_kg);
+        let normalized_roll = normalize(roll_torque, -max_torques.0, max_torques.0);
+        let normalized_pitch = normalize(pitch_torque, -max_torques.1, max_torques.1);
+        let normalized_yaw = normalize(yaw_torque, -max_torques.2, max_torques.2);
+
+        // Scale to RC commands
+        let throttle_command = scale_throttle(normalized_thrust);
+        let aileron_command = scale_control(normalized_roll);
+        let elevator_command = scale_control(normalized_pitch);
+        let rudder_command = scale_control(normalized_yaw);
+
+        let cyberrc_data = cyberrc::RcData {
+            throttle: throttle_command,
+            aileron: aileron_command,
+            elevator: elevator_command,
+            rudder: rudder_command,
+            arm: 0,
+            mode: 0,
+        };
         self.writer
-            .write(control_inputs_to_rc_commands(
-                config.quadrotor.clone(),
-                thrust,
-                torque,
-            ))
+            .write(cyberrc_data)
             .map_err(|e| SimulationError::OtherError(e.to_string()))?;
         Ok(())
     }
@@ -123,7 +145,7 @@ impl LiftoffQuad {
 #[binrw]
 #[br(little)]
 #[derive(Debug)]
-struct LiftoffPacket {
+pub struct LiftoffPacket {
     timestamp: f32,
     position: [f32; 3],
     // TODO: binrw read to quaternion
@@ -234,38 +256,4 @@ fn scale_throttle(thrust: f32) -> i32 {
 
 fn scale_control(value: f32) -> i32 {
     scale_to_rc_command(value, 1000.0, 2000.0, 1500.0)
-}
-
-fn control_inputs_to_rc_commands(
-    quadrotor_config: QuadrotorConfig,
-    thrust: f32,
-    torque: &Vector3<f32>,
-) -> cyberrc::RcData {
-    let roll_torque = torque[0];
-    let pitch_torque = torque[1];
-    let yaw_torque = torque[2];
-
-    // TODO: what cases will we have this be non zero
-    let max_torques = quadrotor_config.max_torques();
-
-    // Normalize inputs
-    let normalized_thrust = normalize(thrust, 0.0, quadrotor_config.max_thrust_kg);
-    let normalized_roll = normalize(roll_torque, -max_torques.0, max_torques.0);
-    let normalized_pitch = normalize(pitch_torque, -max_torques.1, max_torques.1);
-    let normalized_yaw = normalize(yaw_torque, -max_torques.2, max_torques.2);
-
-    // Scale to RC commands
-    let throttle_command = scale_throttle(normalized_thrust);
-    let aileron_command = scale_control(normalized_roll);
-    let elevator_command = scale_control(normalized_pitch);
-    let rudder_command = scale_control(normalized_yaw);
-
-    cyberrc::RcData {
-        throttle: throttle_command,
-        aileron: aileron_command,
-        elevator: elevator_command,
-        rudder: rudder_command,
-        arm: 0,
-        mode: 0,
-    }
 }
