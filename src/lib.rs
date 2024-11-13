@@ -1806,7 +1806,7 @@ pub fn update_planner(
     step: usize,
     time: f32,
     simulation_frequency: usize,
-    quad: &Quadrotor,
+    quad_state: &QuadrotorState,
     obstacles: &[Obstacle],
     planner_config: &[PlannerStepConfig],
 ) -> Result<(), SimulationError> {
@@ -1815,7 +1815,7 @@ pub fn update_planner(
         .find(|s| s.step * simulation_frequency == step * 1000)
     {
         log::info!("Time: {:.2} s,\tSwitch {}", time, planner_step.planner_type);
-        planner_manager.set_planner(create_planner(planner_step, quad, time, obstacles)?);
+        planner_manager.set_planner(create_planner(planner_step, quad_state, time, obstacles)?);
     }
     Ok(())
 }
@@ -1856,29 +1856,29 @@ pub fn update_planner(
 /// ```
 pub fn create_planner(
     step: &PlannerStepConfig,
-    quad: &Quadrotor,
+    quad_state: &QuadrotorState,
     time: f32,
     obstacles: &[Obstacle],
 ) -> Result<PlannerType, SimulationError> {
     let params = &step.params;
     match step.planner_type.as_str() {
         "MinimumJerkLine" => Ok(PlannerType::MinimumJerkLine(MinimumJerkLinePlanner {
-            start_position: quad.position,
+            start_position: quad_state.position,
             end_position: parse_vector3(params, "end_position")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
             end_yaw: parse_f32(params, "end_yaw")?,
             start_time: time,
             duration: parse_f32(params, "duration")?,
         })),
         "Lissajous" => Ok(PlannerType::Lissajous(LissajousPlanner {
-            start_position: quad.position,
+            start_position: quad_state.position,
             center: parse_vector3(params, "center")?,
             amplitude: parse_vector3(params, "amplitude")?,
             frequency: parse_vector3(params, "frequency")?,
             phase: parse_vector3(params, "phase")?,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
             end_yaw: parse_f32(params, "end_yaw")?,
             ramp_time: parse_f32(params, "ramp_time")?,
         })),
@@ -1886,18 +1886,18 @@ pub fn create_planner(
             center: parse_vector3(params, "center")?,
             radius: parse_f32(params, "radius")?,
             angular_velocity: parse_f32(params, "angular_velocity")?,
-            start_position: quad.position,
+            start_position: quad_state.position,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
-            end_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
+            end_yaw: quad_state.orientation.euler_angles().2,
             ramp_time: parse_f32(params, "ramp_time")?,
         })),
         "ObstacleAvoidance" => Ok(PlannerType::ObstacleAvoidance(ObstacleAvoidancePlanner {
             target_position: parse_vector3(params, "target_position")?,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
             end_yaw: parse_f32(params, "end_yaw")?,
             obstacles: obstacles.to_owned(),
             k_att: parse_f32(params, "k_att")?,
@@ -1908,7 +1908,7 @@ pub fn create_planner(
             max_speed: parse_f32(params, "max_speed")?,
         })),
         "MinimumSnapWaypoint" => {
-            let mut waypoints = vec![quad.position];
+            let mut waypoints = vec![quad_state.position];
             waypoints.extend(
                 params["waypoints"]
                     .as_sequence()
@@ -1927,7 +1927,7 @@ pub fn create_planner(
                     })
                     .collect::<Result<Vec<Vector3<f32>>, SimulationError>>()?,
             );
-            let mut yaws = vec![quad.orientation.euler_angles().2];
+            let mut yaws = vec![quad_state.orientation.euler_angles().2];
             yaws.extend(
                 params["yaws"]
                     .as_sequence()
@@ -1954,10 +1954,10 @@ pub fn create_planner(
                 .map(PlannerType::MinimumSnapWaypoint)
         }
         "Landing" => Ok(PlannerType::Landing(LandingPlanner {
-            start_position: quad.position,
+            start_position: quad_state.position,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
         })),
         _ => Err(SimulationError::OtherError(format!(
             "Unknown planner type: {}",
@@ -2788,7 +2788,6 @@ pub fn log_depth_image(
 /// let camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
 /// log_pinhole_depth(&rec, &camera, cam_position, cam_orientation, cam_transform).unwrap();
 /// ```
-
 pub fn log_pinhole_depth(
     rec: &rerun::RecordingStream,
     cam: &Camera,
