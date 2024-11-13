@@ -105,6 +105,7 @@ fn main() -> Result<(), SimulationError> {
     let frame_time = Duration::from_secs_f32(1.0 / config.simulation.simulation_frequency as f32);
     let mut next_frame = Instant::now();
     println!("frame_time: {:?}", frame_time);
+    let mut quad_state = quad.observe()?;
     loop {
         // If real-time mode is enabled, sleep until the next frame simulation frame
         if config.real_time {
@@ -118,14 +119,14 @@ fn main() -> Result<(), SimulationError> {
             i,
             time,
             config.simulation.simulation_frequency,
-            &quad,
+            &quad_state,
             &maze.obstacles,
             &planner_config,
         )?;
         let (desired_position, desired_velocity, desired_yaw) = planner_manager.update(
-            quad.position,
-            quad.orientation,
-            quad.velocity,
+            quad_state.position,
+            quad_state.orientation,
+            quad_state.velocity,
             time,
             &maze.obstacles,
         )?;
@@ -133,18 +134,18 @@ fn main() -> Result<(), SimulationError> {
             &desired_position,
             &desired_velocity,
             desired_yaw,
-            &quad.position,
-            &quad.velocity,
+            &quad_state.position,
+            &quad_state.velocity,
             quad.time_step,
         );
         let torque = controller.compute_attitude_control(
             &calculated_desired_orientation,
-            &quad.orientation,
-            &quad.angular_velocity,
+            &quad_state.orientation,
+            &quad_state.angular_velocity,
             quad.time_step,
         );
         let _ = quad.control(i, &config, thrust, &torque);
-        let quad_state = quad.observe()?;
+        quad_state = quad.observe()?;
         imu.update(quad.time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
         let (measured_accel, measured_gyro) = imu.read(true_accel, true_gyro)?;
@@ -179,7 +180,7 @@ fn main() -> Result<(), SimulationError> {
                         rec,
                         &camera,
                         quad_state.position,
-                        quad_state.orientation,
+                        quad.orientation,
                         config.camera.rotation_transform,
                     )?;
                 }
