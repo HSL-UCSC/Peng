@@ -6,6 +6,7 @@ use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
 use rand;
 use serialport::{available_ports, SerialPort, SerialPortBuilder, SerialPortType};
+use std::fmt::format;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -63,17 +64,18 @@ impl QuadrotorInterface for LiftoffQuad {
     }
 
     /// Observe the current state of the quadrotor
-    /// # Returns
-    /// A tuple containing the position, velocity, orientation, and angular velocity of the quadrotor
+    /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
         let mut data_lock = tokio::runtime::Handle::current().block_on(self.shared_data.lock());
         while let Some(sample) = data_lock.take() {
             // update the last state value
             self.last_state = self.state.clone();
-            // store the sample values into templ variables
-            let position = Vector3::from_row_slice(&sample.position);
+            // Store the sample values into temp variables
+            // Convert the position from Unity coordinates to NED coordinates
+            let position = vector3_ruf_to_ned(Vector3::from_row_slice(&sample.position));
             let velocity = (position - self.last_state.position) / self.time_step;
-            let orientation = sample.attitude_quaternion();
+            // Convert the orientation from Unity RUF to NED coordinates
+            let orientation = quaternion_ruf_to_ned(sample.attitude_quaternion());
             let delta_q = self.last_state.orientation * orientation.conjugate();
             let angle = 2.0 * delta_q.scalar().acos();
             let axis = delta_q
@@ -86,14 +88,8 @@ impl QuadrotorInterface for LiftoffQuad {
                 orientation,
                 angular_velocity,
             };
-            return Ok(QuadrotorState {
-                position,
-                velocity,
-                orientation,
-                angular_velocity,
-            });
         }
-        todo!("implement state feedback from Liftoff UDP")
+        Ok(self.state.clone())
     }
 }
 
@@ -103,16 +99,10 @@ impl LiftoffQuad {
         vehicle_config: QuadrotorConfig,
         liftoff_config: LiftoffConfiguration,
     ) -> Result<Self, SimulationError> {
-        let shared_data = Arc::new(Mutex::new(None));
+        let shared_data: Arc<Mutex<Option<LiftoffPacket>>> = Arc::new(Mutex::new(None));
         let shared_data_clone = Arc::clone(&shared_data);
         tokio::spawn(async move {
-            let _ = feedback_loop(
-                &liftoff_config.ip_address.to_string(),
-                liftoff_config.connection_timeout,
-                liftoff_config.max_retry_delay,
-                shared_data_clone,
-            )
-            .await;
+            let _ = feedback_loop(&liftoff_config, shared_data_clone).await;
         });
         let writer = Writer::new("COM3".to_string(), 115200)
             .map_err(|e| SimulationError::OtherError(e.to_string()))?;
@@ -177,17 +167,17 @@ pub fn vector3_ruf_to_ned(unity_position: Vector3<f32>) -> Vector3<f32> {
 }
 
 async fn feedback_loop(
-    address: &str,
+    liftoff_config: &LiftoffConfiguration,
     data_lock: Arc<Mutex<Option<LiftoffPacket>>>,
 ) -> Result<(), SimulationError> {
     let mut current_wait = Duration::from_secs(0);
     let mut delay = Duration::from_secs(2);
-    let max_wait = Duration::from_secs(60 * 5);
-    let max_delay = Duration::from_secs(30);
+    let max_wait = liftoff_config.connection_timeout;
+    let max_delay = liftoff_config.max_retry_delay;
 
     loop {
         let mut buf = [0; 128];
-        match UdpSocket::bind(address) {
+        match UdpSocket::bind(liftoff_config.ip_address.to_string()) {
             Ok(socket) => {
                 socket
                     .set_read_timeout(Some(Duration::from_secs(15)))
@@ -197,8 +187,6 @@ async fn feedback_loop(
                         let mut cursor = std::io::Cursor::new(&buf[..len]);
                         // TODO: more robust handling of packet parsing errors during resets
                         if let Ok(sample) = LiftoffPacket::read(&mut cursor) {
-                            // TODO: RUF to NED orientation
-                            // TODO: apply transformation to position vector
                             let mut data_lock = data_lock.lock().await;
                             *data_lock = Some(sample);
                         }
@@ -207,9 +195,10 @@ async fn feedback_loop(
                     }
                     Err(e) => {
                         if current_wait >= max_wait {
-                            return Err(SimulationError::OtherError(
-                                "Bind loop exceeded max wait time".into(),
-                            ));
+                            return Err(SimulationError::OtherError(format!(
+                                "Bind loop exceeded max wait time {}",
+                                e.to_string(),
+                            )));
                         }
                         current_wait += delay;
                         sleep(
@@ -221,13 +210,13 @@ async fn feedback_loop(
                 }
             }
             Err(e) => {
-                return Err(SimulationError::OtherError(
-                    "Bind loop exceeded max wait time".into(),
-                ));
+                return Err(SimulationError::OtherError(format!(
+                    "Bind loop exceeded max wait time {}",
+                    e.to_string()
+                )));
             }
         }
     }
-    Ok(())
 }
 
 fn normalize(value: f32, min: f32, max: f32) -> f32 {
