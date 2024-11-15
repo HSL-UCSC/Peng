@@ -14,7 +14,7 @@ pub struct Config {
     /// Simulation configuration
     pub simulation: SimulationConfig,
     /// Quadrotor configuration
-    pub quadrotor: QuadrotorConfig,
+    pub quadrotor: QuadrotorConfigurations,
     /// PID Controller configuration
     pub pid_controller: PIDControllerConfig,
     /// IMU configuration
@@ -35,40 +35,16 @@ pub struct Config {
     pub render_depth: bool,
     /// MultiThreading depth rendering
     pub use_multithreading_depth_rendering: bool,
-    /// Use RK4 for updating quadrotor dynamics_with_controls
-    pub use_rk4_for_dynamics_control: bool,
-    /// Use RK4 for updating quadrotor dynamics without controls
-    pub use_rk4_for_dynamics_update: bool,
     /// Run the simulation in real time mode
     pub real_time: bool,
-    /// Vehicle specific configuration
-    pub vehicle_configuration: Option<VehicleConfigurations>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(tag = "type")]
 /// Vehicle Specifig configuration
-pub enum VehicleConfigurations {
-    LiftoffConfiguration(LiftoffConfiguration),
-}
-
-#[derive(serde::Deserialize)]
-#[serde(default)]
-/// Configurations for controlling drones in Liftoff
-pub struct LiftoffConfiguration {
-    pub ip_address: String,
-    pub connection_timeout: tokio::time::Duration,
-    pub max_retry_delay: tokio::time::Duration,
-}
-
-impl Default for LiftoffConfiguration {
-    fn default() -> Self {
-        LiftoffConfiguration {
-            ip_address: String::from("0.0.0.0:9001"),
-            connection_timeout: tokio::time::Duration::from_secs(5 * 60),
-            max_retry_delay: tokio::time::Duration::from_secs(30),
-        }
-    }
+pub enum QuadrotorConfigurations {
+    Peng(QuadrotorConfig),
+    Liftoff(LiftoffQuadrotorConfig),
 }
 
 #[derive(serde::Deserialize)]
@@ -82,7 +58,7 @@ pub struct PlannerStep {
     pub params: serde_yaml::Value,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the simulation
 pub struct SimulationConfig {
     /// Control frequency in Hz
@@ -93,6 +69,10 @@ pub struct SimulationConfig {
     pub log_frequency: usize,
     /// Duration of the simulation in seconds
     pub duration: f32,
+    /// Use RK4 for updating quadrotor dynamics_with_controls
+    pub use_rk4_for_dynamics_control: bool,
+    /// Use RK4 for updating quadrotor dynamics without controls
+    pub use_rk4_for_dynamics_update: bool,
 }
 
 #[derive(Clone, serde::Deserialize)]
@@ -146,6 +126,54 @@ impl QuadrotorConfig {
     /// Calculate all maximum torques and return them as a tuple
     pub fn max_torques(&self) -> (f32, f32, f32) {
         let motor_thrust = self.max_thrust_kg / 4.0;
+        let max_rp_torque = 2.0 * self.arm_length_m * motor_thrust;
+        let yaw_torque = 2.0 * self.yaw_torque_constant * motor_thrust;
+        (max_rp_torque, max_rp_torque, yaw_torque)
+    }
+}
+
+#[derive(Clone, serde::Deserialize)]
+#[serde(default)]
+/// Configuration for the quadrotor
+pub struct LiftoffQuadrotorConfig {
+    /// Mass of the quadrotor in kg
+    pub mass: f32,
+    /// Gravity in m/s^2
+    pub gravity: f32,
+    /// Inertia matrix in kg*m^2
+    pub inertia_matrix: [f32; 9],
+    /// Maximum thrust in kilograms
+    pub max_thrust_kg: f32,
+    /// Arm length in meters
+    pub arm_length_m: f32,
+    /// Yaw torque constant
+    pub yaw_torque_constant: f32,
+    pub ip_address: String,
+    pub connection_timeout: tokio::time::Duration,
+    pub max_retry_delay: tokio::time::Duration,
+}
+
+impl Default for LiftoffQuadrotorConfig {
+    fn default() -> Self {
+        LiftoffQuadrotorConfig {
+            mass: 1.3,
+            gravity: 9.81,
+            inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
+            max_thrust_kg: 1.3 * 2.5,
+            arm_length_m: 0.150,
+            yaw_torque_constant: 0.05,
+            ip_address: String::from("0.0.0.0:9001"),
+            connection_timeout: tokio::time::Duration::from_secs(5 * 60),
+            max_retry_delay: tokio::time::Duration::from_secs(30),
+        }
+    }
+}
+
+impl LiftoffQuadrotorConfig {
+    /// Calculate all maximum torques and return them as a tuple
+    pub fn max_torques(&self) -> (f32, f32, f32) {
+        let motor_thrust = self.max_thrust_kg / 4.0;
+        // The maximum roll and pitch torques
         let max_rp_torque = 2.0 * self.arm_length_m * motor_thrust;
         let yaw_torque = 2.0 * self.yaw_torque_constant * motor_thrust;
         (max_rp_torque, max_rp_torque, yaw_torque)
@@ -248,13 +276,18 @@ mod tests {
     #[test]
     fn test_base_config() {
         let config = Config::from_yaml("tests/testdata/test_config_base.yaml").unwrap();
+        let mut quadrotor_config: QuadrotorConfig = match config.quadrotor {
+            QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config,
+            _ => panic!("Failed to load Peng configuration"),
+        };
+
         assert_eq!(config.simulation.control_frequency, 200);
         assert_eq!(config.simulation.simulation_frequency, 1000);
         assert_eq!(config.simulation.log_frequency, 20);
         assert_eq!(config.simulation.duration, 70.0);
-        assert_eq!(config.quadrotor.mass, 1.3);
-        assert_eq!(config.quadrotor.gravity, 9.81);
-        assert_eq!(config.quadrotor.drag_coefficient, 0.0);
+        assert_eq!(quadrotor_config.mass, 1.3);
+        assert_eq!(quadrotor_config.gravity, 9.81);
+        assert_eq!(quadrotor_config.drag_coefficient, 0.0);
         assert_eq!(config.pid_controller.pos_gains.kp, [7.1, 7.1, 11.9]);
         assert_eq!(config.pid_controller.att_gains.kd, [0.13, 0.13, 0.1]);
         assert_eq!(config.pid_controller.pos_max_int, [10.0, 10.0, 10.0]);
@@ -265,8 +298,8 @@ mod tests {
     #[test]
     fn test_liftoff_config() {
         let config = Config::from_yaml("tests/testdata/test_liftoff_base.yaml").unwrap();
-        let liftoff_config = match config.vehicle_configuration {
-            Some(VehicleConfigurations::LiftoffConfiguration(liftoff_config)) => liftoff_config,
+        let liftoff_config = match config.quadrotor {
+            QuadrotorConfigurations::Liftoff(liftoff_config) => liftoff_config,
             _ => panic!("Failed to load Liftoff configuration"),
         };
         assert_eq!(liftoff_config.ip_address, "0.0.0.0:9001");
