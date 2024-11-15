@@ -1,4 +1,5 @@
 #![feature(thread_sleep_until)]
+use liftoff_quad::LiftoffQuad;
 use nalgebra::Vector3;
 use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::*;
@@ -8,9 +9,10 @@ use std::time::Instant;
 
 mod liftoff_quad;
 
+// #[tokio::main]
 /// Main function for the simulation
 fn main() -> Result<(), SimulationError> {
-    let mut config_str = "config/quad.yaml";
+    let mut config_str = "config/liftoff_quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
         println!(
@@ -30,13 +32,32 @@ fn main() -> Result<(), SimulationError> {
         "[\x1b[32mINFO\x1b[0m peng_quad]Use rerun.io: {}",
         config.use_rerun
     );
-    let mut quad = Quadrotor::new(
-        1.0 / config.simulation.simulation_frequency as f32,
-        config.quadrotor.mass,
-        config.quadrotor.gravity,
-        config.quadrotor.drag_coefficient,
-        config.quadrotor.inertia_matrix,
-    )?;
+    let time_step = 1.0 / config.simulation.simulation_frequency as f32;
+    // TODO: quadrotor factory
+    let (mut quad, mass, gravity): (Box<dyn QuadrotorInterface>, f32, f32) = match config.quadrotor
+    {
+        config::QuadrotorConfigurations::Peng(quadrotor_config) => (
+            Box::new(Quadrotor::new(
+                1.0 / config.simulation.simulation_frequency as f32,
+                config.simulation.clone(),
+                quadrotor_config.mass,
+                quadrotor_config.gravity,
+                quadrotor_config.drag_coefficient,
+                quadrotor_config.inertia_matrix,
+            )?),
+            quadrotor_config.mass,
+            quadrotor_config.gravity,
+        ),
+        config::QuadrotorConfigurations::Liftoff(liftoff_quadrotor_config) => (
+            Box::new(LiftoffQuad::new(
+                1.0 / config.simulation.simulation_frequency as f32,
+                liftoff_quadrotor_config.clone(),
+            )?),
+            liftoff_quadrotor_config.mass,
+            liftoff_quadrotor_config.gravity,
+        ),
+    };
+
     let _pos_gains = config.pid_controller.pos_gains;
     let _att_gains = config.pid_controller.att_gains;
     let mut controller = PIDController::new(
@@ -44,8 +65,8 @@ fn main() -> Result<(), SimulationError> {
         [_att_gains.kp, _att_gains.kd, _att_gains.ki],
         config.pid_controller.pos_max_int,
         config.pid_controller.att_max_int,
-        config.quadrotor.mass,
-        config.quadrotor.gravity,
+        mass,
+        gravity,
     );
     let mut imu = Imu::new(
         config.imu.accel_noise_std,
@@ -112,8 +133,8 @@ fn main() -> Result<(), SimulationError> {
             thread::sleep_until(next_frame);
             next_frame += frame_time;
         }
-        let time = quad.time_step * i as f32;
-        maze.update_obstacles(quad.time_step);
+        let time = time_step * i as f32;
+        maze.update_obstacles(time_step);
         update_planner(
             &mut planner_manager,
             i,
@@ -136,17 +157,17 @@ fn main() -> Result<(), SimulationError> {
             desired_yaw,
             &quad_state.position,
             &quad_state.velocity,
-            quad.time_step,
+            time_step,
         );
         let torque = controller.compute_attitude_control(
             &calculated_desired_orientation,
             &quad_state.orientation,
             &quad_state.angular_velocity,
-            quad.time_step,
+            time_step,
         );
-        let _ = quad.control(i, &config, thrust, &torque);
+        let _ = quad.control(i, thrust, &torque);
         quad_state = quad.observe()?;
-        imu.update(quad.time_step)?;
+        imu.update(time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
         let (measured_accel, measured_gyro) = imu.read(true_accel, true_gyro)?;
         if i % (config.simulation.simulation_frequency / config.simulation.log_frequency) == 0 {
@@ -180,7 +201,7 @@ fn main() -> Result<(), SimulationError> {
                         rec,
                         &camera,
                         quad_state.position,
-                        quad.orientation,
+                        quad_state.orientation,
                         config.camera.rotation_transform,
                     )?;
                 }
