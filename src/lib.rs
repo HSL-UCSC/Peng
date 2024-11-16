@@ -722,6 +722,7 @@ impl PIDController {
         let gravity_compensation = Vector3::new(0.0, 0.0, self.gravity);
         let total_acceleration = acceleration + gravity_compensation;
         let total_acc_norm = total_acceleration.norm();
+        // TODO thrust limits
         let thrust = self.mass * total_acc_norm;
         let desired_orientation = if total_acc_norm > 1e-6 {
             let z_body = total_acceleration / total_acc_norm;
@@ -2449,18 +2450,6 @@ pub fn log_data(
         "world/quad/desired_position",
         &rerun::Points3D::new([(desired_position.x, desired_position.y, desired_position.z)])
             .with_radii([0.1])
-            .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
-    )?;
-    rec.log(
-        "world/quad/desired_torque",
-        &rerun::Points3D::new([(torque.x, torque.y, torque.z)])
-            .with_radii([0.1])
-            .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
-    )?;
-    rec.log(
-        "world/quad/thrust",
-        &rerun::Points3D::new([(torque.x, torque.y, torque.z)])
-            .with_radii([0.2])
             .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
     )?;
     rec.log(
