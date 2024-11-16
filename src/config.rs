@@ -39,7 +39,7 @@ pub struct Config {
     pub real_time: bool,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type")]
 /// Vehicle Specifig configuration
 pub enum QuadrotorConfigurations {
@@ -75,7 +75,7 @@ pub struct SimulationConfig {
     pub use_rk4_for_dynamics_update: bool,
 }
 
-#[derive(Clone, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
@@ -132,7 +132,7 @@ impl QuadrotorConfig {
     }
 }
 
-#[derive(Clone, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct LiftoffQuadrotorConfig {
@@ -151,6 +151,8 @@ pub struct LiftoffQuadrotorConfig {
     pub ip_address: String,
     pub connection_timeout: tokio::time::Duration,
     pub max_retry_delay: tokio::time::Duration,
+    pub serial_port: Option<String>,
+    pub baud_rate: u32,
 }
 
 impl Default for LiftoffQuadrotorConfig {
@@ -165,6 +167,8 @@ impl Default for LiftoffQuadrotorConfig {
             ip_address: String::from("0.0.0.0:9001"),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
+            serial_port: None,
+            baud_rate: 921600,
         }
     }
 }
