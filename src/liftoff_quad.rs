@@ -1,16 +1,20 @@
-use binrw::{binrw, BinRead};
+use binrw::{binrw, BinRead, BinWrite};
 use cyber_rc::{cyberrc, Writer};
-use nalgebra::{AbstractRotation, Matrix4, Quaternion, Unit, UnitQuaternion, Vector3};
-use peng_quad::config::{self, LiftoffQuadrotorConfig, QuadrotorConfig, QuadrotorConfigurations};
+use nalgebra::{Matrix4, Quaternion, UnitQuaternion, Vector3};
+use peng_quad::config::LiftoffQuadrotorConfig;
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
+use prost::Message;
 use rand;
 use serialport::{available_ports, SerialPort, SerialPortBuilder, SerialPortType};
+use std::io::{Cursor, Write};
 use std::net::UdpSocket;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
+use tempfile::NamedTempFile;
 use tokio::time::{sleep, Duration};
 
+#[derive(Default)]
 /// Represents a quadrotor in the game Liftoff
 /// # Example
 /// ```
@@ -18,7 +22,7 @@ use tokio::time::{sleep, Duration};
 /// ```
 pub struct LiftoffQuad {
     /// The serial writer to communicate with the quadrotor
-    pub writer: Writer,
+    pub writer: Option<Box<dyn Writable>>,
     /// The current state of the quadrotor
     pub state: QuadrotorState,
     /// The last state of the quadrotor
@@ -35,6 +39,50 @@ pub struct LiftoffQuad {
     pub shared_data: Arc<Mutex<Option<LiftoffPacket>>>,
 }
 
+struct FileWriter {
+    file: std::fs::File,
+}
+
+impl Writable for FileWriter {
+    fn write(&mut self, data: cyber_rc::cyberrc::RcData) -> Result<(), SimulationError> {
+        let mut buffer = Vec::new();
+        data.encode_length_delimited(&mut buffer)
+            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+
+        self.file
+            .write_all(&buffer)
+            .map_err(|e| SimulationError::OtherError(e.to_string()))
+    }
+}
+
+struct SerialWriter {
+    port: Writer,
+}
+
+impl Writable for SerialWriter {
+    fn write(&mut self, data: cyberrc::RcData) -> Result<(), SimulationError> {
+        self.port
+            .write(data)
+            .map_err(|e| SimulationError::OtherError(e.to_string()))
+    }
+}
+
+trait Writable {
+    fn write(&mut self, data: cyberrc::RcData) -> Result<(), SimulationError>;
+}
+
+impl FileWriter {
+    fn new(file: std::fs::File) -> Self {
+        Self { file }
+    }
+
+    fn write(&mut self, data: LiftoffPacket) -> Result<(), SimulationError> {
+        let mut writer = Cursor::new(Vec::new());
+        data.write(&mut writer)
+            .map_err(|e| SimulationError::OtherError(e.to_string()))
+    }
+}
+
 impl QuadrotorInterface for LiftoffQuad {
     fn control(
         &mut self,
@@ -47,9 +95,9 @@ impl QuadrotorInterface for LiftoffQuad {
 
         // Normalize inputs
         let normalized_thrust = normalize(thrust, 0.0, self.config.max_thrust_kg);
-        let normalized_roll = normalize(torque[0], -max_torques.0, max_torques.0);
-        let normalized_pitch = normalize(torque[2], -max_torques.1, max_torques.1);
-        let normalized_yaw = normalize(torque[3], -max_torques.2, max_torques.2);
+        let normalized_roll = normalize(torque.x, -max_torques.0, max_torques.0);
+        let normalized_pitch = normalize(torque.y, -max_torques.1, max_torques.1);
+        let normalized_yaw = normalize(torque.z, -max_torques.2, max_torques.2);
 
         // Scale to RC commands
         let throttle_command = scale_throttle(normalized_thrust);
@@ -65,16 +113,19 @@ impl QuadrotorInterface for LiftoffQuad {
             arm: 0,
             mode: 0,
         };
-        self.writer
-            .write(cyberrc_data)
-            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+        if let Some(ref mut writer) = self.writer {
+            writer
+                .write(cyberrc_data)
+                .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+        }
         Ok(())
     }
 
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
-        let mut data_lock = tokio::runtime::Handle::current().block_on(self.shared_data.lock());
+        let mut data_lock = self.shared_data.lock().unwrap();
+
         while let Some(sample) = data_lock.take() {
             // update the last state value
             self.last_state = self.state.clone();
@@ -101,22 +152,46 @@ impl QuadrotorInterface for LiftoffQuad {
     }
 
     fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
-        todo!("")
+        Ok((self.state.acceleration, self.state.angular_velocity))
     }
 }
 
 impl LiftoffQuad {
     pub fn new(time_step: f32, config: LiftoffQuadrotorConfig) -> Result<Self, SimulationError> {
-        let shared_data: Arc<Mutex<Option<LiftoffPacket>>> = Arc::new(Mutex::new(None));
+        let shared_data: Arc<Mutex<Option<LiftoffPacket>>> =
+            Arc::new(Mutex::new(Some(LiftoffPacket::default())));
         let shared_data_clone = Arc::clone(&shared_data);
         let config_clone = config.clone();
-        // tokio::spawn(async move {
-        //     let _ = feedback_loop(config_clone, shared_data_clone).await;
-        // });
-        let writer = Writer::new("COM3".to_string(), 115200)
-            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+        tokio::spawn(async move {
+            let _ = feedback_loop(config_clone, shared_data_clone).await;
+        });
+        // Open a serial port to communicate with the quadrotor if one is specified
+        // If not, open a writer to a temp file
+        let writer: Option<Box<dyn Writable>> = match config.clone().serial_port {
+            Some(port) => {
+                let writer = Writer::new(port.to_string(), config.baud_rate).map_err(|e| {
+                    SimulationError::OtherError(format!(
+                        "Failed to open SerialPort {:?}",
+                        e.to_string()
+                    ))
+                })?;
+                Some(Box::new(SerialWriter { port: writer }))
+            }
+            None => {
+                println!("Opening temp file writer");
+                let temp_file =
+                    NamedTempFile::new().map_err(|e| SimulationError::OtherError(e.to_string()))?;
+                let file_writer = FileWriter::new(
+                    temp_file
+                        .reopen()
+                        .map_err(|e| SimulationError::OtherError(e.to_string()))?,
+                );
+                Some(Box::new(file_writer))
+            }
+        };
+
         Ok(Self {
-            writer: writer,
+            writer,
             state: QuadrotorState::default(),
             last_state: QuadrotorState::default(),
             config,
@@ -151,8 +226,8 @@ impl LiftoffQuad {
 
 // TODO: configure packet based on the content of the Liftoff config file
 #[binrw]
-#[br(little)]
-#[derive(Debug)]
+#[brw(little)]
+#[derive(Debug, Default)]
 pub struct LiftoffPacket {
     timestamp: f32,
     // x, y, z
@@ -218,14 +293,14 @@ async fn feedback_loop(
         match UdpSocket::bind(liftoff_config.ip_address.to_string()) {
             Ok(socket) => {
                 socket
-                    .set_read_timeout(Some(Duration::from_secs(15)))
+                    .set_read_timeout(Some(Duration::from_secs(60)))
                     .map_err(|e| SimulationError::OtherError(e.to_string()))?;
                 match socket.recv_from(&mut buf) {
                     Ok((len, _)) => {
                         let mut cursor = std::io::Cursor::new(&buf[..len]);
                         // TODO: more robust handling of packet parsing errors during resets
                         if let Ok(sample) = LiftoffPacket::read(&mut cursor) {
-                            let mut data_lock = data_lock.lock().await;
+                            let mut data_lock = data_lock.lock().unwrap();
                             *data_lock = Some(sample);
                         }
                         current_wait = Duration::from_secs(0);
