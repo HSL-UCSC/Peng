@@ -23,6 +23,7 @@ quadrotor:
   max_thrust_kg: .5
   arm_length_m: .065
   yaw_torque_constant: .0052
+  serial_port: null
 
 pid_controller:
   pos_gains: # PID gains for position control
