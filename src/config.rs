@@ -122,14 +122,6 @@ impl QuadrotorConfig {
                 "Failed to invert inertia matrix".to_string(),
             ))?)
     }
-
-    /// Calculate all maximum torques and return them as a tuple
-    pub fn max_torques(&self) -> (f32, f32, f32) {
-        let motor_thrust = self.max_thrust_kg / 4.0;
-        let max_rp_torque = 2.0 * self.arm_length_m * motor_thrust;
-        let yaw_torque = 2.0 * self.yaw_torque_constant * motor_thrust;
-        (max_rp_torque, max_rp_torque, yaw_torque)
-    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

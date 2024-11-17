@@ -46,7 +46,7 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 pub mod config;
 pub mod quadrotor;
-use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
+use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector, Vector3};
 use quadrotor::{QuadrotorInterface, QuadrotorState};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
@@ -143,6 +143,7 @@ impl QuadrotorInterface for Quadrotor {
         }
         Ok(())
     }
+
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
         return Ok(QuadrotorState {
             position: self.position,
@@ -151,6 +152,18 @@ impl QuadrotorInterface for Quadrotor {
             orientation: self.orientation,
             angular_velocity: self.angular_velocity,
         });
+    }
+
+    fn max_thrust(&self) -> f32 {
+        2.5 * self.gravity
+    }
+
+    // TDO: need a method to retrieve quadrotor physical constants
+    fn max_torque(&self) -> Vector3<f32> {
+        let motor_thrust = self.max_thrust() / 4.0;
+        let max_rp_torque = 2.0 * 0.65 * motor_thrust;
+        let yaw_torque = 2.0 * 0.005 * motor_thrust;
+        Vector3::new(max_rp_torque, max_rp_torque, yaw_torque)
     }
 
     //TODO: replace this method in main with observe

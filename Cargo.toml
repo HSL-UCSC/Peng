@@ -40,7 +40,7 @@ rayon = "1.10.0"
 rand_chacha = "0.3.1"
 tokio = { version = "1.41.0", features = ["full"] }
 binrw = "0.14.1"
-cyber_rc = { git = "https://github.com/friend0/CyberRC.git" }
+cyber_rc = { git = "https://github.com/friend0/CyberRC.git", rev = "2d842110d6e0" }
 serialport = "4.6.0"
 tempfile = "3.14.0"
 prost = "0.13.3"
