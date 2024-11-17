@@ -9,7 +9,6 @@ use std::time::Instant;
 
 mod liftoff_quad;
 
-// #[tokio::main]
 /// Main function for the simulation
 fn main() -> Result<(), SimulationError> {
     let mut config_str = "config/liftoff_quad.yaml";
@@ -34,6 +33,10 @@ fn main() -> Result<(), SimulationError> {
     );
     let time_step = 1.0 / config.simulation.simulation_frequency as f32;
     // TODO: quadrotor factory
+    println!(
+        "[\x1b[32mINFO\x1b[0m peng_quad] Using quadrotor: {:?}",
+        config.quadrotor
+    );
     let (mut quad, mass, gravity): (Box<dyn QuadrotorInterface>, f32, f32) = match config.quadrotor
     {
         config::QuadrotorConfigurations::Peng(quadrotor_config) => (
@@ -58,6 +61,10 @@ fn main() -> Result<(), SimulationError> {
         ),
     };
 
+    println!(
+        "[\x1b[32mINFO\x1b[0m peng_quad] Quadrotor: {:?} {:?}",
+        mass, gravity
+    );
     let _pos_gains = config.pid_controller.pos_gains;
     let _att_gains = config.pid_controller.att_gains;
     let mut controller = PIDController::new(
@@ -113,7 +120,7 @@ fn main() -> Result<(), SimulationError> {
             .init();
         None
     };
-    log::info!("Use rerun.io: {}", config.use_rerun);
+    // log::info!("Use rerun.io: {}", config.use_rerun);
     if let Some(rec) = &rec {
         rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
         rec.set_time_seconds("timestamp", 0);

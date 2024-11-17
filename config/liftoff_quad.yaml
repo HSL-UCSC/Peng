@@ -1,4 +1,4 @@
-use_rerun: true # Enable visualization using rerun.io
+use_rerun: false # Enable visualization using rerun.io
 render_depth: true # Enable rendering depth
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 real_time: true # Enable real time mode. If not enabled, sim will run in fast time.
@@ -23,7 +23,7 @@ quadrotor:
   max_thrust_kg: .5
   arm_length_m: .065
   yaw_torque_constant: .0052
-  serial_port: null
+  serial_port: "/dev/tty.usbserial-B001JE6N"
 
 pid_controller:
   pos_gains: # PID gains for position control

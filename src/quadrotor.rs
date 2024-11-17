@@ -29,5 +29,9 @@ pub trait QuadrotorInterface {
 
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError>;
 
+    fn max_thrust(&self) -> f32;
+
+    fn max_torque(&self) -> Vector3<f32>;
+
     fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError>;
 }
