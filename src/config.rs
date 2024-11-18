@@ -4,7 +4,7 @@
 //! The configuration is loaded from a YAML file using the serde library.
 //! The configuration is then used to initialize the simulation, quadrotor, PID controller, IMU, maze, camera, mesh, and planner schedule.
 
-use nalgebra::Matrix3;
+use nalgebra::{Matrix3, Vector3};
 
 use crate::SimulationError;
 
@@ -37,6 +37,8 @@ pub struct Config {
     pub use_multithreading_depth_rendering: bool,
     /// Run the simulation in real time mode
     pub real_time: bool,
+    /// Angle limits
+    pub angle_limits: Option<Vec<f32>>,
 }
 
 #[derive(Debug, serde::Deserialize)]

@@ -736,7 +736,7 @@ impl PIDController {
         let total_acceleration = acceleration + gravity_compensation;
         let total_acc_norm = total_acceleration.norm();
         // TODO thrust limits
-        let thrust = self.mass * total_acc_norm;
+        let thrust = (self.mass * total_acc_norm).clamp(0.0, max_thrust);
         let desired_orientation = if total_acc_norm > 1e-6 {
             let z_body = total_acceleration / total_acc_norm;
             let yaw_rotation = UnitQuaternion::from_euler_angles(0.0, 0.0, desired_yaw);

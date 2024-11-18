@@ -158,7 +158,7 @@ fn main() -> Result<(), SimulationError> {
             time,
             &maze.obstacles,
         )?;
-        let (thrust, calculated_desired_orientation) = controller.compute_position_control(
+        let (thrust, mut calculated_desired_orientation) = controller.compute_position_control(
             &desired_position,
             &desired_velocity,
             desired_yaw,
@@ -166,6 +166,16 @@ fn main() -> Result<(), SimulationError> {
             &quad_state.velocity,
             time_step,
         );
+        // Clamp angles for angle mode flight
+        if let Some(angle_limits) = config.angle_limits.clone() {
+            let angle_limits = Vector3::new(angle_limits[0], angle_limits[1], angle_limits[2]);
+            let desired_angles = calculated_desired_orientation.euler_angles();
+            calculated_desired_orientation = nalgebra::UnitQuaternion::from_euler_angles(
+                desired_angles.0.clamp(-angle_limits.x, angle_limits.x),
+                desired_angles.1.clamp(-angle_limits.y, angle_limits.y),
+                desired_angles.2.clamp(-angle_limits.z, angle_limits.z),
+            );
+        }
         let torque = controller.compute_attitude_control(
             &calculated_desired_orientation,
             &quad_state.orientation,
