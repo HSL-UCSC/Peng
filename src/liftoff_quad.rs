@@ -25,7 +25,9 @@ pub struct LiftoffQuad {
     /// The current state of the quadrotor
     pub state: QuadrotorState,
     /// The last state of the quadrotor
-    pub last_state: QuadrotorState,
+    pub previous_state: QuadrotorState,
+    /// Initial State
+    pub initial_state: QuadrotorState,
     /// Simulation time step in seconds
     pub time_step: f32,
     /// Configured physical parameters
@@ -81,7 +83,8 @@ impl LiftoffQuad {
         Ok(Self {
             writer,
             state: QuadrotorState::default(),
-            last_state: QuadrotorState::default(),
+            previous_state: QuadrotorState::default(),
+            initial_state: QuadrotorState::default(),
             config,
             time_step,
             previous_thrust: 0.0,
@@ -97,17 +100,17 @@ impl LiftoffQuad {
         omega_body: Vector3<f32>,                // Angular velocity in body frame
         velocity_body: Vector3<f32>,             // Linear velocity in body frame
     ) -> Vector3<f32> {
-        // Step 1: Calculate thrust acceleration (negative Z in NED body frame)
+        // Calculate thrust acceleration (negative Z in NED body frame)
         let thrust_acceleration = Vector3::new(0.0, 0.0, -self.previous_thrust / self.config.mass);
 
-        // Step 2: Rotate the gravity vector to the body frame using the quaternion `apply`
+        // Rotate the gravity vector to the body frame
         let gravity_inertial = Vector3::new(0.0, 0.0, self.config.gravity); // NED gravity vector in inertial frame
         let gravity_body = q_inertial_to_body.transform_vector(&gravity_inertial); // Rotate gravity vector to body frame
 
-        // Step 3: Calculate rotational (Coriolis) effects
+        // Calculate rotational (Coriolis) effects
         let rotational_acceleration = omega_body.cross(&velocity_body);
 
-        // Step 4: Combine all terms
+        // Combine all terms
         thrust_acceleration + gravity_body - rotational_acceleration
     }
 }
@@ -193,7 +196,7 @@ impl QuadrotorInterface for LiftoffQuad {
         let state = match sample {
             Some(sample) => {
                 // update the last state value
-                self.last_state = self.state.clone();
+                self.previous_state = self.state.clone();
                 let attitude_quaternion = sample.attitude_quaternion();
                 // The position is in Unity inertial coordinates, so we transform to NED inertial
                 // coordinates.
@@ -201,7 +204,7 @@ impl QuadrotorInterface for LiftoffQuad {
                 // Calculate the body-frame velocity by rotating the inertial velocity using the
                 // attitude quaternion.
                 let v_body = attitude_quaternion.transform_vector(
-                    &((sample_position - self.last_state.position) / self.time_step),
+                    &((sample_position - self.previous_state.position) / self.time_step),
                 );
 
                 let omega_body = sample.pqr();
