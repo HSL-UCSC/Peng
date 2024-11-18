@@ -9,8 +9,9 @@ use std::time::Instant;
 
 mod liftoff_quad;
 
+#[tokio::main]
 /// Main function for the simulation
-fn main() -> Result<(), SimulationError> {
+async fn main() -> Result<(), SimulationError> {
     let mut config_str = "config/liftoff_quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
@@ -166,6 +167,8 @@ fn main() -> Result<(), SimulationError> {
             &quad_state.velocity,
             time_step,
         );
+        // Clamp thrust
+        let thrust = thrust.clamp(0.0, quad.max_thrust());
         // Clamp angles for angle mode flight
         if let Some(angle_limits) = config.angle_limits.clone() {
             let angle_limits = Vector3::new(angle_limits[0], angle_limits[1], angle_limits[2]);
