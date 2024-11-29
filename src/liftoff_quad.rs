@@ -6,8 +6,7 @@ use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
 use std::net::UdpSocket;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
+use tokio::time::Duration;
 
 /// Represents a quadrotor in the game Liftoff
 /// # Example
@@ -210,24 +209,10 @@ impl QuadrotorInterface for LiftoffQuad {
     }
 }
 
-fn try_take_with_timeout<T>(mutex: &Mutex<Option<T>>, timeout: Duration) -> Option<T> {
-    let start = std::time::Instant::now();
-    while start.elapsed() < timeout {
-        if let Ok(mut guard) = mutex.try_lock() {
-            if let Some(value) = guard.take() {
-                println!("Getting Value");
-                return Some(value); // Successfully took the value
-            }
-        }
-        // std::thread::sleep(Duration::from_millis(1)); // Small sleep to avoid busy waiting
-    }
-    None // Timeout occurred
-}
-
 // TODO: configure packet based on the content of the Liftoff config file
 #[binrw]
 #[brw(little)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct LiftoffPacket {
     timestamp: f32,
     // x, y, z
@@ -283,6 +268,7 @@ async fn feedback_loop(
     liftoff_config: LiftoffQuadrotorConfig,
     tx: mpsc::Sender<LiftoffPacket>,
 ) -> Result<(), SimulationError> {
+    let mut initial_position: Option<LiftoffPacket> = None;
     loop {
         let mut buf = [0; 128];
         // Possible bug: rebinding is necesssary to get new data from Liftoff.
@@ -295,7 +281,16 @@ async fn feedback_loop(
                     Ok((len, _)) => {
                         let mut cursor = std::io::Cursor::new(&buf[..len]);
                         // TODO: more robust handling of packet parsing errors during resets
-                        let sample = if let Ok(sample) = LiftoffPacket::read(&mut cursor) {
+                        let sample = if let Ok(mut sample) = LiftoffPacket::read(&mut cursor) {
+                            if initial_position.is_none() {
+                                initial_position = Some(sample.clone());
+                            }
+                            // Position will be relative to initial, as Liftoff does not start the
+                            // quad at 0, 0, 0
+                            let initial_position = initial_position.as_ref();
+                            sample.position[0] -= initial_position.unwrap().position[0];
+                            sample.position[1] -= initial_position.unwrap().position[1];
+                            sample.position[2] -= initial_position.unwrap().position[2];
                             sample
                         } else {
                             LiftoffPacket::default()
@@ -312,8 +307,8 @@ async fn feedback_loop(
                 )));
             }
         };
-        if let Some(sample) = sample {
-            let _ = tx.send(sample).await.is_ok();
+        if sample.is_some() {
+            let _ = tx.send(sample.unwrap()).await.is_ok();
         }
         // sleep(Duration::from_millis(10)).await;
     }
