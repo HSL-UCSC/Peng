@@ -5,7 +5,7 @@ use peng_quad::config::LiftoffQuadrotorConfig;
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
 use std::net::UdpSocket;
-use tokio::sync::mpsc;
+use tokio::sync::watch;
 use tokio::time::Duration;
 
 /// Represents a quadrotor in the game Liftoff
@@ -31,18 +31,17 @@ pub struct LiftoffQuad {
     /// Previous Torque
     pub previous_torque: Vector3<f32>,
     /// Quadrotor sample mutex
-    pub consumer: mpsc::Receiver<LiftoffPacket>,
+    pub consumer: watch::Receiver<Option<LiftoffPacket>>,
 }
 
 impl LiftoffQuad {
     pub fn new(time_step: f32, config: LiftoffQuadrotorConfig) -> Result<Self, SimulationError> {
-        let (producer, consumer) = tokio::sync::mpsc::channel(100);
+        let (producer, mut consumer) = watch::channel(None::<LiftoffPacket>);
         let config_clone = config.clone();
         tokio::spawn(async move {
             let _ = feedback_loop(config_clone, producer).await;
         });
         // Open a serial port to communicate with the quadrotor if one is specified
-        // If not, open a writer to a temp file
         let writer: Option<Writer> = match config.clone().serial_port {
             Some(port) => {
                 let mut writer = Writer::new(port.to_string(), config.baud_rate).map_err(|e| {
@@ -54,6 +53,15 @@ impl LiftoffQuad {
                 let start_time = std::time::Instant::now();
                 // Zero throttle to arm the quadrotor in Liftoff
                 println!("Arming Drone");
+                writer
+                    .serial_port
+                    .set_timeout(Duration::from_millis(50))
+                    .map_err(|e| {
+                        SimulationError::OtherError(format!(
+                            "Failed to set timeout {:?}",
+                            e.to_string()
+                        ))
+                    })?;
                 while std::time::Instant::now() - start_time < std::time::Duration::from_secs(5) {
                     writer
                         .write(&mut cyberrc::RcData {
@@ -65,10 +73,15 @@ impl LiftoffQuad {
                             mode: 0,
                         })
                         .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+                    std::thread::sleep(Duration::from_millis(100));
                 }
+
                 Some(writer)
             }
-            None => None,
+            None => {
+                println!("No serial port specified, writing to temp file");
+                None
+            }
         };
 
         Ok(Self {
@@ -144,7 +157,6 @@ impl QuadrotorInterface for LiftoffQuad {
             arm: 0,
             mode: 0,
         };
-        // println!("RC Data: {:?}", cyberrc_data);
         if let Some(writer) = &mut self.writer {
             writer
                 .write(&mut cyberrc_data)
@@ -156,11 +168,8 @@ impl QuadrotorInterface for LiftoffQuad {
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
-        // let sample = try_take_with_timeout(&self.shared_data, Duration::from_millis(25));
-        let mut sample = None;
-        while let Ok(value) = self.consumer.try_recv() {
-            sample = Some(value);
-        }
+        let sample = self.consumer.borrow_and_update().clone();
+
         let state = match sample {
             Some(sample) => {
                 // update the last state value
@@ -221,6 +230,8 @@ pub struct LiftoffPacket {
     attitude: [f32; 4],
     // pitch, roll, yaw - q, p, r
     gyro: [f32; 3],
+    // throttle, yaw, pitch, roll
+    input: [f32; 4],
     motor_num: u8,
     #[br(count = motor_num)]
     motor_rpm: Vec<f32>,
@@ -243,19 +254,20 @@ impl LiftoffPacket {
             self.attitude[2],
         ));
         // Flip the handedness by negating the Z component of the RUF quaternion.
+        // The orientation is now LUF
         let flipped_quat = Quaternion::new(ruf_quat.w, ruf_quat.i, ruf_quat.j, -ruf_quat.k);
 
-        // Define a 90-degree rotation around the Y-axis to align X (Right) to X (North)
-        let rotation_y =
-            UnitQuaternion::from_axis_angle(&Vector3::y_axis(), std::f32::consts::FRAC_PI_2);
+        // // Define a 90-degree rotation around the Y-axis to align X (Right) to X (North)
+        // let rotation_y =
+        //     UnitQuaternion::from_axis_angle(&Vector3::y_axis(), std::f32::consts::FRAC_PI_2);
 
-        // Define a -90-degree rotation around the X-axis to align Z (Forward) to Z (Down)
-        let rotation_x =
-            UnitQuaternion::from_axis_angle(&Vector3::x_axis(), -std::f32::consts::FRAC_PI_2);
+        // Define a 90-degree rotation around the X-axis to align Z (Forward) to Z (Down)
+        // let rotation_x =
+        //     UnitQuaternion::from_axis_angle(&Vector3::x_axis(), std::f32::consts::FRAC_PI_2);
 
         // Combine the handedness-adjusted quaternion with the rotation transformations
         // Apply the Y rotation first, then the X rotation
-        rotation_x * rotation_y * UnitQuaternion::new_normalize(flipped_quat)
+        UnitQuaternion::new_normalize(flipped_quat)
     }
 
     /// Translate Unity coordinates to NED coordinates
@@ -266,7 +278,7 @@ impl LiftoffPacket {
 
 async fn feedback_loop(
     liftoff_config: LiftoffQuadrotorConfig,
-    tx: mpsc::Sender<LiftoffPacket>,
+    tx: watch::Sender<Option<LiftoffPacket>>,
 ) -> Result<(), SimulationError> {
     let mut initial_position: Option<LiftoffPacket> = None;
     loop {
@@ -308,7 +320,7 @@ async fn feedback_loop(
             }
         };
         if sample.is_some() {
-            let _ = tx.send(sample.unwrap()).await.is_ok();
+            let _ = tx.send(sample).is_ok();
         }
         // sleep(Duration::from_millis(10)).await;
     }
