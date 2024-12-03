@@ -1,4 +1,4 @@
-use_rerun: false # Enable visualization using rerun.io
+use_rerun: true # Enable visualization using rerun.io
 render_depth: true # Enable rendering depth
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 real_time: true # Enable real time mode. If not enabled, sim will run in fast time.
@@ -6,8 +6,8 @@ real_time: true # Enable real time mode. If not enabled, sim will run in fast ti
 rerun_blueprint: "config/peng_default_blueprint.rbl"
 
 simulation:
-  control_frequency: 200 # Frequency of control loop execution (Hz)
-  simulation_frequency: 1000 # Frequency of physics simulation updates (Hz)
+  control_frequency: 40 # Frequency of control loop execution (Hz)
+  simulation_frequency: 200 # Frequency of physics simulation updates (Hz)
   log_frequency: 20 # Frequency of data logging (Hz)
   duration: 70.0 # Total duration of the simulation (seconds)
   use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
@@ -24,6 +24,7 @@ quadrotor:
   arm_length_m: .065
   yaw_torque_constant: .0052
   serial_port: "/dev/tty.usbserial-B001JE6N"
+  baud_rate: 460800
 
 pid_controller:
   pos_gains: # PID gains for position control
@@ -65,71 +66,22 @@ mesh:
 
 planner_schedule:
   # Minimum Jerk Line trajectory
-  - step: 1000 # Simulation step in ms to start this planner
+  - step: 200 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
-      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_position: [0.0, 0.0, -1.0] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 2.5 # Duration of the trajectory (s)
-
-  # Lissajous trajectory
-  - step: 5000
-    planner_type: Lissajous
-    params:
-      center: [0.5, 0.5, 1.0] # Center of the Lissajous curve [x, y, z] (m)
-      amplitude: [0.5, 0.5, 0.2] # Amplitudes of the curve [x, y, z] (m)
-      frequency: [1.0, 2.0, 3.0] # Frequencies of the curve [x, y, z] (Hz)
-      phase: [0.0, 1.5707963267948966, 0.0] # Phase offsets [x, y, z] (rad)
-      duration: 20.0 # Duration of the trajectory (s)
-      end_yaw: 6.283185307179586 # Target end yaw angle (2*PI rad)
-      ramp_time: 5.0 # Time for smooth transition (s)
-
-  # Circular trajectory
-  - step: 27000
-    planner_type: Circle
-    params:
-      center: [0.5, 0.5, 1.0] # Center of the circle [x, y, z] (m)
-      radius: 0.5 # Radius of the circle (m)
-      angular_velocity: 1.0 # Angular velocity (rad/s)
       duration: 5.0 # Duration of the trajectory (s)
-      ramp_time: 2.0 # Time for smooth transition (s)
 
-  # Another Minimum Jerk Line trajectory
-  - step: 32000
-    planner_type: MinimumJerkLine
+  # Hover
+  - step: 1200 # Simulation step in ms to start this planner
+    planner_type: Hover
     params:
-      end_position: [-2.5, 0.0, 1.0] # Target end position [x, y, z] (m)
-      end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 3.0 # Duration of the trajectory (s)
-
-  # Obstacle Avoidance trajectory
-  - step: 35000
-    planner_type: ObstacleAvoidance
-    params:
-      target_position: [2.5, 1.0, 0.5] # Target position [x, y, z] (m)
-      duration: 10.0 # Duration of the trajectory (s)
-      end_yaw: 0.0 # Target end yaw angle (rad)
-      k_att: 0.03 # Attractive force gain
-      k_rep: 0.01 # Repulsive force gain
-      k_vortex: 0.005 # Vortex force gain
-      d0: 0.5 # Obstacle influence distance (m)
-      d_target: 0.5 # Target influence distance (m)
-      max_speed: 0.1 # Maximum speed (m/s)
-
-  # Minimum Snap Waypoint trajectory
-  - step: 45000
-    planner_type: MinimumSnapWaypoint
-    params:
-      waypoints: # List of waypoints [x, y, z] (m)
-        - [1.0, 1.0, 1.5]
-        - [-1.0, 1.0, 1.75]
-        - [0.0, -1.0, 1.0]
-        - [0.0, 0.0, 0.5]
-      yaws: [1.5707963267948966, 3.141592653589793, -1.5707963267948966, 0.0] # Yaw angles at waypoints (rad)
-      segment_times: [5.0, 5.0, 5.0, 5.0] # Time to reach each waypoint (s)
+      target_position: [0.0, 0.0, -1.0] # Target end position [x, y, z] (m)
+      target_yaw: 0.0
 
   # Landing trajectory
-  - step: 65000
+  - step: 13000
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)
