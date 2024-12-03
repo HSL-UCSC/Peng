@@ -736,7 +736,7 @@ impl PIDController {
         let total_acceleration = acceleration + gravity_compensation;
         let total_acc_norm = total_acceleration.norm();
         // TODO thrust limits
-        let thrust = (self.mass * total_acc_norm).clamp(0.0, max_thrust);
+        let thrust = self.mass * total_acc_norm;
         let desired_orientation = if total_acc_norm > 1e-6 {
             let z_body = total_acceleration / total_acc_norm;
             let yaw_rotation = UnitQuaternion::from_euler_angles(0.0, 0.0, desired_yaw);
@@ -1764,6 +1764,7 @@ impl Planner for MinimumSnapWaypointPlanner {
             && (current_position - last_waypoint).norm() < 0.1)
     }
 }
+#[derive(Debug)]
 /// Represents a step in the planner schedule.
 /// # Example
 /// ```
@@ -1829,10 +1830,7 @@ pub fn update_planner(
     obstacles: &[Obstacle],
     planner_config: &[PlannerStepConfig],
 ) -> Result<(), SimulationError> {
-    if let Some(planner_step) = planner_config
-        .iter()
-        .find(|s| s.step * simulation_frequency == step * 1000)
-    {
+    if let Some(planner_step) = planner_config.iter().find(|s| s.step == step) {
         log::info!("Time: {:.2} s,\tSwitch {}", time, planner_step.planner_type);
         planner_manager.set_planner(create_planner(planner_step, quad_state, time, obstacles)?);
     }
@@ -1890,6 +1888,10 @@ pub fn create_planner(
             end_yaw: parse_f32(params, "end_yaw")?,
             start_time: time,
             duration: parse_f32(params, "duration")?,
+        })),
+        "Hover" => Ok(PlannerType::Hover(HoverPlanner {
+            target_position: quad_state.position,
+            target_yaw: parse_f32(params, "target_yaw")?,
         })),
         "Lissajous" => Ok(PlannerType::Lissajous(LissajousPlanner {
             start_position: quad_state.position,
