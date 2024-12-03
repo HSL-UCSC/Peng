@@ -41,7 +41,7 @@ pub struct Config {
     pub angle_limits: Option<Vec<f32>>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 #[serde(tag = "type")]
 /// Vehicle Specifig configuration
 pub enum QuadrotorConfigurations {
@@ -77,7 +77,7 @@ pub struct SimulationConfig {
     pub use_rk4_for_dynamics_update: bool,
 }
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
@@ -162,7 +162,7 @@ impl Default for LiftoffQuadrotorConfig {
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
             serial_port: None,
-            baud_rate: 921600,
+            baud_rate: 460800,
         }
     }
 }
