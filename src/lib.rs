@@ -146,6 +146,7 @@ impl QuadrotorInterface for Quadrotor {
 
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
         return Ok(QuadrotorState {
+            time: 0.0,
             position: self.position,
             velocity: self.velocity,
             acceleration: self.acceleration,
@@ -735,11 +736,10 @@ impl PIDController {
         let gravity_compensation = Vector3::new(0.0, 0.0, self.gravity);
         let total_acceleration = acceleration + gravity_compensation;
         let total_acc_norm = total_acceleration.norm();
-        // TODO thrust limits
         let thrust = self.mass * total_acc_norm;
         let desired_orientation = if total_acc_norm > 1e-6 {
             let z_body = total_acceleration / total_acc_norm;
-            let yaw_rotation = UnitQuaternion::from_euler_angles(0.0, 0.0, desired_yaw);
+            let yaw_rotation = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), desired_yaw);
             let x_body_horizontal = yaw_rotation * Vector3::new(1.0, 0.0, 0.0);
             let y_body = z_body.cross(&x_body_horizontal).normalize();
             let x_body = y_body.cross(&z_body);
