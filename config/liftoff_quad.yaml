@@ -6,8 +6,8 @@ real_time: true # Enable real time mode. If not enabled, sim will run in fast ti
 rerun_blueprint: "config/peng_default_blueprint.rbl"
 
 simulation:
-  control_frequency: 40 # Frequency of control loop execution (Hz)
-  simulation_frequency: 200 # Frequency of physics simulation updates (Hz)
+  control_frequency: 120 # Frequency of control loop execution (Hz)
+  simulation_frequency: 240 # Frequency of physics simulation updates (Hz)
   log_frequency: 20 # Frequency of data logging (Hz)
   duration: 70.0 # Total duration of the simulation (seconds)
   use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
@@ -69,7 +69,7 @@ planner_schedule:
   - step: 200 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
-      end_position: [0.0, 0.0, -1.0] # Target end position [x, y, z] (m)
+      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
       duration: 5.0 # Duration of the trajectory (s)
 
@@ -77,11 +77,11 @@ planner_schedule:
   - step: 1200 # Simulation step in ms to start this planner
     planner_type: Hover
     params:
-      target_position: [0.0, 0.0, -1.0] # Target end position [x, y, z] (m)
+      target_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
       target_yaw: 0.0
 
   # Landing trajectory
   - step: 13000
     planner_type: Landing
     params:
-      duration: 5.0 # Duration of the landing maneuver (s)
+      duration: 10.0 # Duration of the landing maneuver (s)
