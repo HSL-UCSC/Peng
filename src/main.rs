@@ -93,25 +93,26 @@ async fn main() -> Result<(), SimulationError> {
     }
     let (mut quad, mass, gravity): (Box<dyn QuadrotorInterface>, f32, f32) = match config.quadrotor
     {
-        config::QuadrotorConfigurations::Peng(quadrotor_config) => (
+        config::QuadrotorConfigurations::Peng(quad_config) => (
             Box::new(Quadrotor::new(
                 1.0 / config.simulation.simulation_frequency as f32,
                 config.simulation.clone(),
-                quadrotor_config.mass,
-                quadrotor_config.gravity,
-                quadrotor_config.drag_coefficient,
-                quadrotor_config.inertia_matrix,
+                quad_config.mass,
+                quad_config.gravity,
+                quad_config.drag_coefficient,
+                quad_config.inertia_matrix,
             )?),
-            quadrotor_config.mass,
-            quadrotor_config.gravity,
+            quad_config.mass,
+            quad_config.gravity,
         ),
-        config::QuadrotorConfigurations::Liftoff(ref liftoff_quadrotor_config) => (
+        config::QuadrotorConfigurations::Liftoff(ref liftoff_quad_config) => (
             Box::new(LiftoffQuad::new(
-                1.0 / config.simulation.simulation_frequency as f32,
-                liftoff_quadrotor_config.clone(),
+                1.0 / config.simulation.control_frequency as f32,
+                config.simulation.clone(),
+                liftoff_quad_config.clone(),
             )?),
-            liftoff_quadrotor_config.mass,
-            liftoff_quadrotor_config.gravity,
+            liftoff_quad_config.mass,
+            liftoff_quad_config.gravity,
         ),
     };
 
@@ -158,15 +159,7 @@ async fn main() -> Result<(), SimulationError> {
             time,
             &maze.obstacles,
         )?;
-        let (roll, pitch, yaw) = quad_state.orientation.euler_angles();
-
-        println!(
-            "Quad Error: {:?}, {:?}, {:?}",
-            desired_position,
-            quad_state.position,
-            (roll.to_degrees(), pitch.to_degrees(), yaw.to_degrees())
-        );
-        let (thrust, mut calculated_desired_orientation) = controller.compute_position_control(
+        let (mut thrust, mut calculated_desired_orientation) = controller.compute_position_control(
             &desired_position,
             &desired_velocity,
             desired_yaw,
@@ -174,25 +167,17 @@ async fn main() -> Result<(), SimulationError> {
             &quad_state.velocity,
             time_step,
         );
-        // Clamp thrust
-        let thrust = thrust.clamp(0.0, quad.max_thrust());
-        // Clamp angles for angle mode flight
-        if let Some(angle_limits) = config.angle_limits.clone() {
-            let angle_limits = Vector3::new(angle_limits[0], angle_limits[1], angle_limits[2]);
-            let desired_angles = calculated_desired_orientation.euler_angles();
-            calculated_desired_orientation = nalgebra::UnitQuaternion::from_euler_angles(
-                desired_angles.0.clamp(-angle_limits.x, angle_limits.x),
-                desired_angles.1.clamp(-angle_limits.y, angle_limits.y),
-                desired_angles.2.clamp(-angle_limits.z, angle_limits.z),
-            );
-        }
-        let torque = controller.compute_attitude_control(
+
+        let mut torque = controller.compute_attitude_control(
             &calculated_desired_orientation,
             &quad_state.orientation,
-            &quad_state.angular_velocity,
+            &(quad_state.angular_velocity / (2.0 * std::f32::consts::PI)),
             time_step,
         );
-        let _ = quad.control(i, thrust, &torque);
+        let first_planner = planner_config.first().unwrap();
+        if i >= first_planner.step {
+            let _ = quad.control(i, thrust, &torque);
+        }
         quad_state = quad.observe()?;
         imu.update(time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
@@ -214,7 +199,7 @@ async fn main() -> Result<(), SimulationError> {
                     rerun_quad_state.position = Vector3::new(
                         quad_state.position.x,
                         -quad_state.position.y,
-                        -quad_state.position.z,
+                        quad_state.position.z,
                     );
                 }
                 if trajectory.add_point(rerun_quad_state.position) {
@@ -227,13 +212,14 @@ async fn main() -> Result<(), SimulationError> {
                     &desired_position,
                     &desired_velocity,
                     &measured_accel,
-                    &measured_gyro,
+                    &quad_state.angular_velocity,
                     thrust,
                     &torque,
                 )?;
                 let rotation = nalgebra::UnitQuaternion::from_axis_angle(
                     &Vector3::z_axis(),
-                    std::f32::consts::FRAC_PI_2,
+                    // std::f32::consts::FRAC_PI_2,
+                    0.0,
                 );
                 if config.render_depth {
                     log_depth_image(rec, &camera, config.use_multithreading_depth_rendering)?;
@@ -249,10 +235,10 @@ async fn main() -> Result<(), SimulationError> {
             }
         }
         i += 1;
-        if time >= config.simulation.duration {
-            log::info!("Complete Simulation");
-            break;
-        }
+        // if time >= config.simulation.duration {
+        //     log::info!("Complete Simulation");
+        //     break;
+        // }
     }
     log::logger().flush();
     Ok(())
