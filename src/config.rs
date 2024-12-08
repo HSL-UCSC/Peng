@@ -60,7 +60,7 @@ pub struct PlannerStep {
     pub params: serde_yaml::Value,
 }
 
-#[derive(Clone, serde::Deserialize)]
+#[derive(Clone, Default, serde::Deserialize)]
 /// Configuration for the simulation
 pub struct SimulationConfig {
     /// Control frequency in Hz
@@ -142,6 +142,7 @@ pub struct LiftoffQuadrotorConfig {
     pub arm_length_m: f32,
     /// Yaw torque constant
     pub yaw_torque_constant: f32,
+    /// The IP address where Liftoff is publishing state data
     pub ip_address: String,
     pub connection_timeout: tokio::time::Duration,
     pub max_retry_delay: tokio::time::Duration,
