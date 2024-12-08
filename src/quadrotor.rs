@@ -5,6 +5,9 @@ use nalgebra::{UnitQuaternion, Vector3};
 #[derive(Clone, Debug, Default)]
 /// Represents the state of a quadrotor
 pub struct QuadrotorState {
+    /// Time stampe of the state
+    pub time: f32,
+    /// Current position of the quadrotor in NED
     pub position: Vector3<f32>,
     /// Current velocity of the quadrotor
     pub velocity: Vector3<f32>,
