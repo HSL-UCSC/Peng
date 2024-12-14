@@ -1,13 +1,10 @@
 #![feature(thread_sleep_until)]
-use liftoff_quad::LiftoffQuad;
 use nalgebra::Vector3;
 use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::*;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-
-mod liftoff_quad;
 
 #[tokio::main]
 /// Main function for the simulation
@@ -189,13 +186,6 @@ async fn main() -> Result<(), SimulationError> {
             if let Some(rec) = &rec {
                 rec.set_time_seconds("timestamp", time);
                 let mut rerun_quad_state = quad_state.clone();
-                if let config::QuadrotorConfigurations::Liftoff(_) = config.quadrotor.clone() {
-                    rerun_quad_state.position = Vector3::new(
-                        quad_state.position.x,
-                        -quad_state.position.y,
-                        quad_state.position.z,
-                    );
-                }
                 if trajectory.add_point(rerun_quad_state.position) {
                     log_trajectory(rec, &trajectory)?;
                 }
