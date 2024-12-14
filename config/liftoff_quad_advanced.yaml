@@ -6,8 +6,8 @@ real_time: true # Enable real time mode. If not enabled, sim will run in fast ti
 rerun_blueprint: "config/peng_default_blueprint.rbl"
 
 simulation:
-  control_frequency: 50 # Frequency of control loop execution (Hz)
-  simulation_frequency: 250 # Frequency of physics simulation updates (Hz)
+  control_frequency: 40 # Frequency of control loop execution (Hz)
+  simulation_frequency: 240 # Frequency of physics simulation updates (Hz)
   log_frequency: 20 # Frequency of data logging (Hz)
   duration: 70.0 # Total duration of the simulation (seconds)
   use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
@@ -20,7 +20,7 @@ quadrotor:
   drag_coefficient: 0.800 # Aerodynamic drag coefficient
   # Inertia matrix [Ixx, Ixy, Ixz, Iyx, Iyy, Iyz, Izx, Izy, Izz] (kg*m^2)
   inertia_matrix: [2.5e-5, 0.0, 0.0, 0.0, 2.5e-5, 0.0, 0.0, 0.0, 4.5e-5]
-  max_thrust_kg: 223.
+  max_thrust_kg: .5
   arm_length_m: .065
   yaw_torque_constant: .0052
   serial_port: "/dev/tty.usbserial-B001JE6N"
@@ -30,12 +30,12 @@ pid_controller:
   pos_gains: # PID gains for position control
     kp: [7.1, 7.1, 11.9] # Proportional gains [x, y, z]
     kd: [2.4, 2.4, 6.7] # Derivative gains [x, y, z]
-    ki: [.1, 0.0, 0.0] # Integral gains [x, y, z]
+    ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
-    kp: [1.5, 2.0, 1.0] # Proportional gains [roll, pitch, yaw]
-    kd: [0.13, 0.12, 0.1] # Derivative gains [roll, pitch, yaw]
+    kp: [1.5, 1.5, 1.0] # Proportional gains [roll, pitch, yaw]
+    kd: [0.13, 0.13, 0.1] # Derivative gains [roll, pitch, yaw]
     ki: [0.0, 0.0, 0.0] # Integral gains [roll, pitch, yaw]
-  pos_max_int: [10.0, 10.0, 10.0] # Maximum integral error for position control [x, y, z]
+  pos_max_int: [1.0, 1.0, 10.0] # Maximum integral error for position control [x, y, z]
   att_max_int: [0.5, 0.5, 0.5] # Maximum integral error for attitude control [roll, pitch, yaw]
 
 angle_limits: [20, 20, 360]
@@ -69,26 +69,30 @@ planner_schedule:
   - step: 200 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
-      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_position: [0.0, 0.0, 1.5] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 0.5 # Duration of the trajectory (s)
+      duration: 5.0 # Duration of the trajectory (s)
 
   # Hover
   - step: 1200 # Simulation step in ms to start this planner
-    planner_type: Hover
-    params:
-      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
-      target_yaw: 0.0 # Target end yaw angle (rad)
-
-  - step: 2400 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
-      end_position: [1.0, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_position: [1.5, 0.0, 1.5] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 2.5 # Duration of the trajectory (s)
+      duration: 10.0 # Duration of the trajectory (s)
+
+  # # Circular trajectory
+  # - step: 4800
+  #   planner_type: Circle
+  #   params:
+  #     center: [0.5, 0.5, 1.0] # Center of the circle [x, y, z] (m)
+  #     radius: 0.5 # Radius of the circle (m)
+  #     angular_velocity: 0.1 # Angular velocity (rad/s)
+  #     duration: 40.0 # Duration of the trajectory (s)
+  #     ramp_time: 10.0 # Time for smooth transition (s)
 
   # Landing trajectory
-  - step: 13000
+  - step: 14400
     planner_type: Landing
     params:
       duration: 10.0 # Duration of the landing maneuver (s)
