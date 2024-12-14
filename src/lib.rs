@@ -428,6 +428,25 @@ impl Quadrotor {
         derivative[10..13].copy_from_slice(angular_acceleration.as_slice());
         derivative
     }
+
+    /// Simulates IMU readings
+    /// # Returns
+    /// * A tuple containing the true acceleration and angular velocity of the quadrotor
+    /// # Errors
+    /// * Returns a SimulationError if the IMU readings cannot be calculated
+    /// # Example
+    /// ```
+    /// use nalgebra::Vector3;
+    /// use peng_quad::Quadrotor;
+    ///
+    /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
+    /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
+    /// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let (true_acceleration, true_angular_velocity) = quadrotor.read_imu().unwrap();
+    /// ```
+    pub fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
+        Ok((self.acceleration, self.angular_velocity))
+    }
 }
 /// Represents an Inertial Measurement Unit (IMU) with bias and noise characteristics
 /// # Example

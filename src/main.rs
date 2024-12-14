@@ -9,6 +9,7 @@ use std::time::Instant;
 #[tokio::main]
 /// Main function for the simulation
 async fn main() -> Result<(), SimulationError> {
+
     let mut config_str = "config/quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
@@ -83,6 +84,7 @@ async fn main() -> Result<(), SimulationError> {
     // log::info!("Use rerun.io: {}", config.use_rerun);
     if let Some(rec) = &rec {
         rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
+
         rec.set_time_seconds("timestamp", 0);
         log_mesh(rec, config.mesh.division, config.mesh.spacing)?;
         log_maze_tube(rec, &maze)?;
