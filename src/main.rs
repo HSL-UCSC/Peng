@@ -91,34 +91,28 @@ async fn main() -> Result<(), SimulationError> {
         log_maze_tube(rec, &maze)?;
         log_maze_obstacles(rec, &maze)?;
     }
-    let (mut quad, mass, gravity): (Box<dyn QuadrotorInterface>, f32, f32) = match config.quadrotor
-    {
+    let (mut quad, mass): (Box<dyn QuadrotorInterface>, f32) = match config.quadrotor {
         config::QuadrotorConfigurations::Peng(quad_config) => (
             Box::new(Quadrotor::new(
                 1.0 / config.simulation.simulation_frequency as f32,
                 config.simulation.clone(),
                 quad_config.mass,
-                quad_config.gravity,
+                config.simulation.gravity,
                 quad_config.drag_coefficient,
                 quad_config.inertia_matrix,
             )?),
             quad_config.mass,
-            quad_config.gravity,
         ),
-        config::QuadrotorConfigurations::Liftoff(ref liftoff_quad_config) => (
-            Box::new(LiftoffQuad::new(
-                1.0 / config.simulation.control_frequency as f32,
-                config.simulation.clone(),
-                liftoff_quad_config.clone(),
-            )?),
-            liftoff_quad_config.mass,
-            liftoff_quad_config.gravity,
-        ),
+        _ => {
+            return Err(SimulationError::OtherError(
+                "Unsupported quadrotor type".to_string(),
+            ))
+        }
     };
 
     println!(
         "[\x1b[32mINFO\x1b[0m peng_quad] Quadrotor: {:?} {:?}",
-        mass, gravity
+        mass, config.simulation.gravity
     );
     let _pos_gains = config.pid_controller.pos_gains;
     let _att_gains = config.pid_controller.att_gains;
@@ -128,7 +122,7 @@ async fn main() -> Result<(), SimulationError> {
         config.pid_controller.pos_max_int,
         config.pid_controller.att_max_int,
         mass,
-        gravity,
+        config.simulation.gravity,
     );
     log::info!("Starting simulation...");
     let mut i = 0;
