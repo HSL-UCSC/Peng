@@ -30,7 +30,7 @@ pub trait QuadrotorInterface {
         torque: &Vector3<f32>,
     ) -> Result<(), SimulationError>;
 
-    fn observe(&mut self) -> Result<QuadrotorState, SimulationError>;
+    fn observe(&mut self, step_number: usize) -> Result<QuadrotorState, SimulationError>;
 
     fn max_thrust(&self) -> f32;
 

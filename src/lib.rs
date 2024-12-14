@@ -144,7 +144,7 @@ impl QuadrotorInterface for Quadrotor {
         Ok(())
     }
 
-    fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, step_number: usize) -> Result<QuadrotorState, SimulationError> {
         return Ok(QuadrotorState {
             time: 0.0,
             position: self.position,
@@ -726,6 +726,7 @@ impl PIDController {
     ) -> (f32, UnitQuaternion<f32>) {
         let error_position = desired_position - current_position;
         let error_velocity = desired_velocity - current_velocity;
+        println!("Position error: {:?}", error_position);
         self.integral_pos_error += error_position * dt;
         self.integral_pos_error = self
             .integral_pos_error

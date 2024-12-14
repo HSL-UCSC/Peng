@@ -134,7 +134,7 @@ async fn main() -> Result<(), SimulationError> {
     let mut i = 0;
     let frame_time = Duration::from_secs_f32(time_step);
     let mut next_frame = Instant::now();
-    let mut quad_state = quad.observe()?;
+    let mut quad_state = quad.observe(i)?;
     loop {
         // If real-time mode is enabled, sleep until the next frame simulation frame
         if config.real_time {
@@ -171,14 +171,17 @@ async fn main() -> Result<(), SimulationError> {
         let mut torque = controller.compute_attitude_control(
             &calculated_desired_orientation,
             &quad_state.orientation,
-            &(quad_state.angular_velocity / (2.0 * std::f32::consts::PI)),
+            &quad_state.angular_velocity,
             time_step,
         );
+        println!("Desired Position: {:?}", desired_position);
+        println!("Desired Orientation: {:?}", calculated_desired_orientation);
+        println!("Desired Torque: {:?}", torque);
         let first_planner = planner_config.first().unwrap();
         if i >= first_planner.step {
             let _ = quad.control(i, thrust, &torque);
         }
-        quad_state = quad.observe()?;
+        quad_state = quad.observe(i)?;
         imu.update(time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
         let (measured_accel, measured_gyro) = imu.read(true_accel, true_gyro)?;

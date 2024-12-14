@@ -116,7 +116,6 @@ impl LiftoffQuad {
     ) -> Vector3<f32> {
         // Calculate thrust acceleration (negative Z in NED body frame)
         let thrust_acceleration = Vector3::new(0.0, 0.0, -self.previous_thrust / self.config.mass);
-
         // Rotate the gravity vector to the body frame
         let gravity_inertial = Vector3::new(0.0, 0.0, self.config.gravity); // NED gravity vector in inertial frame
         let gravity_body = q_inertial_to_body.transform_vector(&gravity_inertial); // Rotate gravity vector to body frame
@@ -145,28 +144,31 @@ impl QuadrotorInterface for LiftoffQuad {
                 / self.simulation_config.control_frequency)
             == 0
         {
+            println!(
+                "Thrust: {:?} Roll {:?} Pitch {:?} Yaw {:?} Timestamp: {:?}",
+                thrust,
+                torque.x,
+                torque.y,
+                torque.z,
+                step_number as f32 * 1.0 / self.simulation_config.simulation_frequency as f32
+            );
             // Given thrust and torque, calculate the control inputs
             // Clamp thrust and torque control inputs
             let max_thrust = self.max_thrust();
-            // let thrust = thrust.clamp(0.0, 5.0);
+            let thrust = thrust.clamp(-5.0, 10.0);
             let max_torque = self.max_torque();
-            println!("Pitch Torque: {:?}", torque.y);
+            // println!("Roll Torque: {:?}", torque.x);
             let torque = Vector3::new(
-                torque.x.clamp(-max_torque.x, max_torque.x),
+                torque.x.clamp(-10.0, 10.0),
                 torque.y.clamp(-10.0, 10.0),
-                // torque.z.clamp(-max_torque.z, max_torque.z),
-                torque.z.clamp(-6.0, 6.0),
+                torque.z.clamp(-20.0, 20.0),
             );
 
             // Normalize inputs
-            let normalized_thrust = normalize(thrust, 0.0, 5.0);
-            let normalized_roll = normalize(torque.x, -max_torque.x, max_torque.x);
-            let normalized_pitch = normalize(torque.y, -12.0, 12.0);
-            let normalized_yaw = normalize(torque.z, -6.0, 6.0);
-            println!(
-                "Thrust: {:?}, Normalized Thrust: {:?} Timestamp: {:?}",
-                thrust, normalized_thrust, self.state.time
-            );
+            let normalized_thrust = normalize(thrust, 0.0, 20.0);
+            let normalized_roll = normalize(torque.x, -20.0, 20.0);
+            let normalized_pitch = normalize(torque.y, -6.0, 6.0);
+            let normalized_yaw = normalize(torque.z, -20.0, 20.0);
 
             // Scale to RC commands
             let throttle_command = scale_throttle(normalized_thrust);
@@ -183,6 +185,7 @@ impl QuadrotorInterface for LiftoffQuad {
                 arm: 0,
                 mode: 0,
             };
+            self.previous_thrust = normalized_thrust * self.max_thrust();
             if let Some(writer) = &mut self.writer {
                 writer
                     .write(&mut cyberrc_data)
@@ -194,7 +197,7 @@ impl QuadrotorInterface for LiftoffQuad {
 
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
-    fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, step: usize) -> Result<QuadrotorState, SimulationError> {
         // TODO: if there is not a new packet, return the old state
         if !self
             .consumer
@@ -216,7 +219,10 @@ impl QuadrotorInterface for LiftoffQuad {
 
         let initial_state = self.initial_state.get_or_insert_with(|| {
             QuadrotorState {
-                time: sample.timestamp,
+                time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f32(),
                 position: sample.position(),
                 velocity: Vector3::zeros(),
                 acceleration: Vector3::zeros(),
@@ -224,7 +230,6 @@ impl QuadrotorInterface for LiftoffQuad {
                 // subsequent samples
                 orientation: (|| -> UnitQuaternion<f32> {
                     let attitude = sample.attitude_quaternion();
-                    println!("Initial Yaw: {:?}", attitude.euler_angles().2.to_degrees());
                     UnitQuaternion::new_normalize(Quaternion::new(
                         (1.0 - (attitude.k * attitude.k)).sqrt(),
                         0.0,
@@ -232,7 +237,7 @@ impl QuadrotorInterface for LiftoffQuad {
                         -attitude.k,
                     ))
                 })(),
-                // orientation: sample.attitude_quaternion(),
+                // orientation: UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
                 angular_velocity: Vector3::zeros(),
             }
         });
@@ -240,7 +245,8 @@ impl QuadrotorInterface for LiftoffQuad {
         // Adjust the sample by the initial state
         // Adjust for the initial yaw - we take the starting yaw of the vehicle to be 0
         let attitude_quaternion =
-            initial_state.orientation.clone().conjugate() * sample.attitude_quaternion();
+            initial_state.orientation.clone().inverse() * sample.attitude_quaternion();
+        // let attitude_quaternion = sample.attitude_quaternion();
         // Asjut fot the initial position - we take the starting location of the vehicle to be the
         // origin
         let mut sample_position = sample.position();
@@ -250,16 +256,18 @@ impl QuadrotorInterface for LiftoffQuad {
 
         // Calculate the body-frame velocity by rotating the inertial velocity using the
         // attitude quaternion.
-        let v_body = attitude_quaternion.transform_vector(
-            &((sample_position - self.previous_state.position)
-                / (sample.timestamp - self.previous_state.time)),
-        );
+        let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
+        let v_body = attitude_quaternion
+            .transform_vector(&((sample_position - self.previous_state.position) / (dt)));
         // sample_position[2] = -sample_position[2];
 
         let omega_body = sample.pqr();
+        let alpha = 0.5;
+        let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
         let acceleration_body = self.body_acceleration(attitude_quaternion, omega_body, v_body);
+        println!("Acceleration: {:?}", acceleration_body);
         self.state = QuadrotorState {
-            time: sample.timestamp as f32,
+            time: step as f32 * dt,
             position: sample_position,
             velocity: v_body,
             acceleration: acceleration_body,
@@ -404,11 +412,11 @@ fn scale_to_rc_command_with_center(value: f32, min: f32, center: f32, max: f32) 
 /// ```
 fn scale_throttle(thrust: f32) -> i32 {
     // thrust is inverted from Xinput to Liftoff
-    -scale_to_rc_command(thrust, -32768, 32768)
+    -scale_to_rc_command(thrust, -32768, 32767)
 }
 
 fn scale_control(value: f32) -> i32 {
-    scale_to_rc_command_with_center(value, -32768 as f32, 0.0, 32737 as f32)
+    scale_to_rc_command_with_center(value, -32768 as f32, 0.0, 32767 as f32)
 }
 
 #[rustfmt::skip]
