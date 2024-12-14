@@ -41,13 +41,6 @@ pub struct Config {
     pub angle_limits: Option<Vec<f32>>,
 }
 
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(tag = "type")]
-/// Vehicle Specifig configuration
-pub enum QuadrotorConfigurations {
-    Peng(QuadrotorConfig),
-}
-
 #[derive(serde::Deserialize)]
 /// Configuration for a planner step
 pub struct PlannerStep {
@@ -90,6 +83,13 @@ impl Default for SimulationConfig {
             use_rk4_for_dynamics_update: false,
         }
     }
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(tag = "type")]
+/// Vehicle Specifig configuration
+pub enum QuadrotorConfigurations {
+    Peng(QuadrotorConfig),
 }
 
 #[derive(Copy, Clone, Debug, serde::Deserialize)]
