@@ -91,8 +91,7 @@ async fn main() -> Result<(), SimulationError> {
         log_maze_tube(rec, &maze)?;
         log_maze_obstacles(rec, &maze)?;
     }
-    let (mut quad, mass, gravity): (Box<dyn QuadrotorInterface>, f32, f32) = match config.quadrotor
-    {
+    let (mut quad, mass): (Box<dyn QuadrotorInterface>, f32, f32) = match config.quadrotor {
         config::QuadrotorConfigurations::Peng(quad_config) => (
             Box::new(Quadrotor::new(
                 1.0 / config.simulation.simulation_frequency as f32,
