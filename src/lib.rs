@@ -189,6 +189,17 @@ impl QuadrotorInterface for Quadrotor {
     fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
         Ok((self.acceleration, self.angular_velocity))
     }
+
+    fn vehicle_configuration(&self) -> config::QuadrotorConfig {
+        config::QuadrotorConfig {
+            mass: self.mass,
+            drag_coefficient: self.drag_coefficient,
+            inertia_matrix: self.inertia_matrix.as_slice().try_into().unwrap(),
+            max_thrust_kg: self.max_thrust(),
+            arm_length_m: 0.0,
+            yaw_torque_constant: 0.0,
+        }
+    }
 }
 
 /// Implementation of the Quadrotor struct
@@ -1818,7 +1829,7 @@ pub struct PlannerStepConfig {
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
 /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-/// let quad_state = quadrotor.observe().unwrap();
+/// let quad_state = quadrotor.observe(0).unwrap();
 /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
 /// let planner_config = vec![PlannerStepConfig {
 ///     step: 0,
@@ -1876,7 +1887,7 @@ pub fn update_planner(
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
 /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-/// let quadrotor_state = quadrotor.observe().unwrap();
+/// let quadrotor_state = quadrotor.observe(0).unwrap();
 /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
 /// let planner = create_planner(&step, &quadrotor_state, time, &obstacles).unwrap();
 /// match planner {
@@ -2456,7 +2467,7 @@ pub fn ray_cast(
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
 /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-/// let quad_state = quadrotor.observe().unwrap();
+/// let quad_state = quadrotor.observe(0).unwrap();
 /// let desired_position = Vector3::new(0.0, 0.0, 0.0);
 /// let desired_velocity = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_accel = Vector3::new(0.0, 0.0, 0.0);

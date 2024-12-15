@@ -29,6 +29,8 @@ pub trait QuadrotorInterface {
         torque: &Vector3<f32>,
     ) -> Result<(), SimulationError>;
 
+    fn vehicle_configuration(&self) -> crate::config::QuadrotorConfig;
+
     fn observe(&mut self, step_number: usize) -> Result<QuadrotorState, SimulationError>;
 
     fn max_thrust(&self) -> f32;
