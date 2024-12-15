@@ -41,14 +41,6 @@ pub struct Config {
     pub angle_limits: Option<Vec<f32>>,
 }
 
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(tag = "type")]
-/// Vehicle Specifig configuration
-pub enum QuadrotorConfigurations {
-    Peng(QuadrotorConfig),
-    Liftoff(LiftoffQuadrotorConfig),
-}
-
 #[derive(serde::Deserialize)]
 /// Configuration for a planner step
 pub struct PlannerStep {
@@ -92,6 +84,15 @@ impl Default for SimulationConfig {
         }
     }
 }
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(tag = "type")]
+/// Vehicle Specifig configuration
+pub enum QuadrotorConfigurations {
+    Peng(QuadrotorConfig),
+    Liftoff(QuadrotorConfig),
+}
+
 #[derive(Copy, Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 /// Configuration for the quadrotor
@@ -129,14 +130,10 @@ impl QuadrotorConfig {
     }
 
     pub fn inverse_inertia_matrix(&self) -> Result<Matrix3<f32>, SimulationError> {
-        Ok(self
-            .inertia_matrix()
+        self.inertia_matrix()
             .try_inverse()
             .ok_or(SimulationError::NalgebraError(
                 "Failed to invert inertia matrix".to_string(),
-            ))?)
-    }
-}
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]

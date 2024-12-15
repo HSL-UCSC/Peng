@@ -60,7 +60,7 @@ async fn main() -> Result<(), SimulationError> {
     );
     let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
     let mut trajectory = Trajectory::new(Vector3::new(0.0, 0.0, 0.0));
-    let mut depth_buffer: Vec<f32> = vec![0.0; camera.resolution.0 * camera.resolution.1];
+    let mut _depth_buffer: Vec<f32> = vec![0.0; camera.resolution.0 * camera.resolution.1];
     let planner_config: Vec<PlannerStepConfig> = config
         .planner_schedule
         .iter()
@@ -164,7 +164,7 @@ async fn main() -> Result<(), SimulationError> {
             time,
             &maze.obstacles,
         )?;
-        let (mut thrust, mut calculated_desired_orientation) = controller.compute_position_control(
+        let (thrust, calculated_desired_orientation) = controller.compute_position_control(
             &desired_position,
             &desired_velocity,
             desired_yaw,
@@ -173,7 +173,7 @@ async fn main() -> Result<(), SimulationError> {
             time_step,
         );
 
-        let mut torque = controller.compute_attitude_control(
+        let torque = controller.compute_attitude_control(
             &calculated_desired_orientation,
             &quad_state.orientation,
             &quad_state.angular_velocity,
@@ -189,7 +189,7 @@ async fn main() -> Result<(), SimulationError> {
         quad_state = quad.observe(i)?;
         imu.update(time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
-        let (measured_accel, measured_gyro) = imu.read(true_accel, true_gyro)?;
+        let (measured_accel, _measured_gyro) = imu.read(true_accel, true_gyro)?;
         if i % (config.simulation.simulation_frequency / config.simulation.log_frequency) == 0 {
             if config.render_depth {
                 camera.render_depth(
@@ -202,7 +202,6 @@ async fn main() -> Result<(), SimulationError> {
 
             if let Some(rec) = &rec {
                 rec.set_time_seconds("timestamp", time);
-                let mut rerun_quad_state = quad_state.clone();
                 if let config::QuadrotorConfigurations::Liftoff(_) = config.quadrotor.clone() {
                     rerun_quad_state.position = Vector3::new(
                         quad_state.position.x,
@@ -210,6 +209,7 @@ async fn main() -> Result<(), SimulationError> {
                         quad_state.position.z,
                     );
                 }
+                let rerun_quad_state = quad_state.clone();
                 if trajectory.add_point(rerun_quad_state.position) {
                     log_trajectory(rec, &trajectory)?;
                 }
@@ -221,7 +221,6 @@ async fn main() -> Result<(), SimulationError> {
                     &desired_velocity,
                     &measured_accel,
                     &quad_state.angular_velocity,
-                    thrust,
                     &torque,
                 )?;
                 let rotation = nalgebra::UnitQuaternion::from_axis_angle(
@@ -243,10 +242,10 @@ async fn main() -> Result<(), SimulationError> {
             }
         }
         i += 1;
-        // if time >= config.simulation.duration {
-        //     log::info!("Complete Simulation");
-        //     break;
-        // }
+        if time >= config.simulation.duration {
+            log::info!("Complete Simulation");
+            break;
+        }
     }
     log::logger().flush();
     Ok(())
