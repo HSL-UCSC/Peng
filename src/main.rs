@@ -12,7 +12,6 @@ mod liftoff_quad;
 #[tokio::main]
 /// Main function for the simulation
 async fn main() -> Result<(), SimulationError> {
-
     let mut config_str = "config/quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
@@ -107,18 +106,11 @@ async fn main() -> Result<(), SimulationError> {
         ),
         config::QuadrotorConfigurations::Liftoff(ref liftoff_quad_config) => (
             Box::new(LiftoffQuad::new(
-                1.0 / config.simulation.control_frequency as f32,
                 config.simulation.clone(),
                 liftoff_quad_config.clone(),
             )?),
             liftoff_quad_config.mass,
-            liftoff_quad_config.gravity,
         ),
-        _ => {
-            return Err(SimulationError::OtherError(
-                "Unsupported quadrotor type".to_string(),
-            ))
-        }
     };
 
     println!(
@@ -202,6 +194,7 @@ async fn main() -> Result<(), SimulationError> {
 
             if let Some(rec) = &rec {
                 rec.set_time_seconds("timestamp", time);
+                let mut rerun_quad_state = quad_state.clone();
                 if let config::QuadrotorConfigurations::Liftoff(_) = config.quadrotor.clone() {
                     rerun_quad_state.position = Vector3::new(
                         quad_state.position.x,
