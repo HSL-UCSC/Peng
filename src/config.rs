@@ -3,13 +3,18 @@
 //! This module contains the configuration for the simulation, quadrotor, PID controller, IMU, maze, camera, mesh, and planner schedule.
 //! The configuration is loaded from a YAML file using the serde library.
 //! The configuration is then used to initialize the simulation, quadrotor, PID controller, IMU, maze, camera, mesh, and planner schedule.
+
+use nalgebra::Matrix3;
+
+use crate::SimulationError;
+
 #[derive(serde::Deserialize)]
 /// Configuration for the simulation
 pub struct Config {
     /// Simulation configuration
     pub simulation: SimulationConfig,
     /// Quadrotor configuration
-    pub quadrotor: QuadrotorConfig,
+    pub quadrotor: QuadrotorConfigurations,
     /// PID Controller configuration
     pub pid_controller: PIDControllerConfig,
     /// IMU configuration
@@ -30,12 +35,10 @@ pub struct Config {
     pub render_depth: bool,
     /// MultiThreading depth rendering
     pub use_multithreading_depth_rendering: bool,
-    /// Use RK4 for updating quadrotor dynamics_with_controls
-    pub use_rk4_for_dynamics_control: bool,
-    /// Use RK4 for updating quadrotor dynamics without controls
-    pub use_rk4_for_dynamics_update: bool,
-    // Run the simulation in real time mode
+    /// Run the simulation in real time mode
     pub real_time: bool,
+    /// Angle limits
+    pub angle_limits: Option<Vec<f32>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -49,9 +52,11 @@ pub struct PlannerStep {
     pub params: serde_yaml::Value,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the simulation
 pub struct SimulationConfig {
+    /// Gravity in m/s^2
+    pub gravity: f32,
     /// Control frequency in Hz
     pub control_frequency: usize,
     /// Simulation frequency in Hz
@@ -60,19 +65,77 @@ pub struct SimulationConfig {
     pub log_frequency: usize,
     /// Duration of the simulation in seconds
     pub duration: f32,
+    /// Use RK4 for updating quadrotor dynamics_with_controls
+    pub use_rk4_for_dynamics_control: bool,
+    /// Use RK4 for updating quadrotor dynamics without controls
+    pub use_rk4_for_dynamics_update: bool,
 }
 
-#[derive(serde::Deserialize)]
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        SimulationConfig {
+            gravity: 9.81,
+            control_frequency: 200,
+            simulation_frequency: 1000,
+            log_frequency: 70,
+            duration: 70.0,
+            use_rk4_for_dynamics_control: false,
+            use_rk4_for_dynamics_update: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(tag = "type")]
+/// Vehicle Specifig configuration
+pub enum QuadrotorConfigurations {
+    Peng(QuadrotorConfig),
+    Liftoff(QuadrotorConfig),
+}
+
+#[derive(Copy, Clone, Debug, serde::Deserialize)]
+#[serde(default)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
     /// Mass of the quadrotor in kg
     pub mass: f32,
-    /// Gravity in m/s^2
-    pub gravity: f32,
     /// Drag coefficient in Ns^2/m^2
     pub drag_coefficient: f32,
     /// Inertia matrix in kg*m^2
     pub inertia_matrix: [f32; 9],
+    /// Maximum thrust in kilograms
+    pub max_thrust_kg: f32,
+    /// Arm length in meters
+    pub arm_length_m: f32,
+    /// Yaw torque constant
+    pub yaw_torque_constant: f32,
+}
+
+impl Default for QuadrotorConfig {
+    fn default() -> Self {
+        QuadrotorConfig {
+            mass: 1.3,
+            drag_coefficient: 0.000,
+            inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
+            max_thrust_kg: 1.3 * 2.5,
+            arm_length_m: 0.150,
+            yaw_torque_constant: 0.05,
+        }
+    }
+}
+
+impl QuadrotorConfig {
+    pub fn inertia_matrix(&self) -> Matrix3<f32> {
+        Matrix3::from_row_slice(&self.inertia_matrix)
+    }
+
+    pub fn inverse_inertia_matrix(&self) -> Result<Matrix3<f32>, SimulationError> {
+        self.inertia_matrix()
+            .try_inverse()
+            .ok_or(SimulationError::NalgebraError(
+                "Failed to invert inertia matrix".to_string(),
+            ))
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -162,5 +225,30 @@ impl Config {
     pub fn from_yaml(filename: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let contents = std::fs::read_to_string(filename)?;
         Ok(serde_yaml::from_str(&contents)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_base_config() {
+        let config = Config::from_yaml("tests/testdata/test_config_base.yaml").unwrap();
+        let mut quadrotor_config: QuadrotorConfig = match config.quadrotor {
+            QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config,
+            _ => panic!("Failed to load Peng configuration"),
+        };
+
+        assert_eq!(config.simulation.control_frequency, 200);
+        assert_eq!(config.simulation.simulation_frequency, 1000);
+        assert_eq!(config.simulation.log_frequency, 20);
+        assert_eq!(config.simulation.duration, 70.0);
+        assert_eq!(quadrotor_config.mass, 1.3);
+        assert_eq!(quadrotor_config.drag_coefficient, 0.0);
+        assert_eq!(config.pid_controller.pos_gains.kp, [7.1, 7.1, 11.9]);
+        assert_eq!(config.pid_controller.att_gains.kd, [0.13, 0.13, 0.1]);
+        assert_eq!(config.pid_controller.pos_max_int, [10.0, 10.0, 10.0]);
+        assert_eq!(config.imu.accel_noise_std, 0.02);
+        assert_eq!(config.maze.upper_bounds, [4.0, 2.0, 2.0]);
     }
 }

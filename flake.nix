@@ -3,7 +3,7 @@
 
   # Specify the inputs, such as nixpkgs
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -15,6 +15,8 @@
     devShell = pkgs.mkShell {
       # Add Rust and Cargo to the environment
       buildInputs = [
+        pkgs.protobuf
+        pkgs.cmake
         pkgs.rustup
         pkgs.zsh
       ];
@@ -25,6 +27,9 @@
 
       # Optional shellHook to fetch dependencies when entering the shell
       shellHook = ''
+        export GIT_CONFIG=$PWD/.gitconfig
+        export CARGO_NET_GIT_FETCH_WITH_CLI=true
+        export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"  # Ensure it uses your SSH config
         # Start Zsh if not already the active shell
         if [ "$SHELL" != "$(command -v zsh)" ]; then
           export SHELL="$(command -v zsh)"
