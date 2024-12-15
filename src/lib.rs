@@ -166,6 +166,26 @@ impl QuadrotorInterface for Quadrotor {
         let yaw_torque = 2.0 * 0.005 * motor_thrust;
         Vector3::new(max_rp_torque, max_rp_torque, yaw_torque)
     }
+
+    //TODO: replace this method in main with observe
+    /// Simulates IMU readings
+    /// # Returns
+    /// * A tuple containing the true acceleration and angular velocity of the quadrotor
+    /// # Errors
+    /// * Returns a SimulationError if the IMU readings cannot be calculated
+    /// # Example
+    /// ```
+    /// use nalgebra::Vector3;
+    /// use peng_quad::Quadrotor;
+    ///
+    /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
+    /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
+    /// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let (true_acceleration, true_angular_velocity) = quadrotor.read_imu().unwrap();
+    /// ```
+    fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
+        Ok((self.acceleration, self.angular_velocity))
+    }
 }
 
 /// Implementation of the Quadrotor struct
