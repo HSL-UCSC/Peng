@@ -1,14 +1,14 @@
 #![feature(thread_sleep_until)]
 use nalgebra::Vector3;
+use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::*;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-mod liftoff_quad;
-
+#[tokio::main]
 /// Main function for the simulation
-fn main() -> Result<(), SimulationError> {
+async fn main() -> Result<(), SimulationError> {
     let mut config_str = "config/quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
@@ -29,22 +29,11 @@ fn main() -> Result<(), SimulationError> {
         "[\x1b[32mINFO\x1b[0m peng_quad]Use rerun.io: {}",
         config.use_rerun
     );
-    let mut quad = Quadrotor::new(
-        1.0 / config.simulation.simulation_frequency as f32,
-        config.quadrotor.mass,
-        config.quadrotor.gravity,
-        config.quadrotor.drag_coefficient,
-        config.quadrotor.inertia_matrix,
-    )?;
-    let _pos_gains = config.pid_controller.pos_gains;
-    let _att_gains = config.pid_controller.att_gains;
-    let mut controller = PIDController::new(
-        [_pos_gains.kp, _pos_gains.kd, _pos_gains.ki],
-        [_att_gains.kp, _att_gains.kd, _att_gains.ki],
-        config.pid_controller.pos_max_int,
-        config.pid_controller.att_max_int,
-        config.quadrotor.mass,
-        config.quadrotor.gravity,
+    let time_step = 1.0 / config.simulation.simulation_frequency as f32;
+    // TODO: quadrotor factory
+    println!(
+        "[\x1b[32mINFO\x1b[0m peng_quad] Using quadrotor: {:?}",
+        config.quadrotor
     );
     let mut imu = Imu::new(
         config.imu.accel_noise_std,
@@ -67,7 +56,7 @@ fn main() -> Result<(), SimulationError> {
     );
     let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
     let mut trajectory = Trajectory::new(Vector3::new(0.0, 0.0, 0.0));
-    let mut depth_buffer: Vec<f32> = vec![0.0; camera.resolution.0 * camera.resolution.1];
+    let mut _depth_buffer: Vec<f32> = vec![0.0; camera.resolution.0 * camera.resolution.1];
     let planner_config: Vec<PlannerStepConfig> = config
         .planner_schedule
         .iter()
@@ -87,44 +76,78 @@ fn main() -> Result<(), SimulationError> {
         Some(_rec)
     } else {
         env_logger::builder()
-            .parse_env(env_logger::Env::default().default_filter_or("info"))
+            .parse_env(env_logger::Env::default().default_filter_or("debug"))
             .init();
         None
     };
-    log::info!("Use rerun.io: {}", config.use_rerun);
+    // log::info!("Use rerun.io: {}", config.use_rerun);
     if let Some(rec) = &rec {
-        rec.log_file_from_path(config.rerun_blueprint, None, false)?;
+        rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
+
         rec.set_time_seconds("timestamp", 0);
         log_mesh(rec, config.mesh.division, config.mesh.spacing)?;
         log_maze_tube(rec, &maze)?;
         log_maze_obstacles(rec, &maze)?;
     }
+    let (mut quad, mass): (Box<dyn QuadrotorInterface>, f32) = match config.quadrotor {
+        config::QuadrotorConfigurations::Peng(quad_config) => (
+            Box::new(Quadrotor::new(
+                1.0 / config.simulation.simulation_frequency as f32,
+                config.simulation.clone(),
+                quad_config.mass,
+                config.simulation.gravity,
+                quad_config.drag_coefficient,
+                quad_config.inertia_matrix,
+            )?),
+            quad_config.mass,
+        ),
+        _ => {
+            return Err(SimulationError::OtherError(
+                "Unsupported quadrotor type".to_string(),
+            ))
+        }
+    };
+
+    println!(
+        "[\x1b[32mINFO\x1b[0m peng_quad] Quadrotor: {:?} {:?}",
+        mass, config.simulation.gravity
+    );
+    let _pos_gains = config.pid_controller.pos_gains;
+    let _att_gains = config.pid_controller.att_gains;
+    let mut controller = PIDController::new(
+        [_pos_gains.kp, _pos_gains.kd, _pos_gains.ki],
+        [_att_gains.kp, _att_gains.kd, _att_gains.ki],
+        config.pid_controller.pos_max_int,
+        config.pid_controller.att_max_int,
+        mass,
+        config.simulation.gravity,
+    );
     log::info!("Starting simulation...");
     let mut i = 0;
-    let frame_time = Duration::from_secs_f32(1.0 / config.simulation.simulation_frequency as f32);
+    let frame_time = Duration::from_secs_f32(time_step);
     let mut next_frame = Instant::now();
-    println!("frame_time: {:?}", frame_time);
+    let mut quad_state = quad.observe()?;
     loop {
         // If real-time mode is enabled, sleep until the next frame simulation frame
         if config.real_time {
             thread::sleep_until(next_frame);
             next_frame += frame_time;
         }
-        let time = quad.time_step * i as f32;
-        maze.update_obstacles(quad.time_step);
+        let time = time_step * i as f32;
+        maze.update_obstacles(time_step);
         update_planner(
             &mut planner_manager,
             i,
             time,
             config.simulation.simulation_frequency,
-            &quad,
+            &quad_state,
             &maze.obstacles,
             &planner_config,
         )?;
         let (desired_position, desired_velocity, desired_yaw) = planner_manager.update(
-            quad.position,
-            quad.orientation,
-            quad.velocity,
+            quad_state.position,
+            quad_state.orientation,
+            quad_state.velocity,
             time,
             &maze.obstacles,
         )?;
@@ -132,49 +155,63 @@ fn main() -> Result<(), SimulationError> {
             &desired_position,
             &desired_velocity,
             desired_yaw,
-            &quad.position,
-            &quad.velocity,
-            quad.time_step,
+            &quad_state.position,
+            &quad_state.velocity,
+            time_step,
         );
+
         let torque = controller.compute_attitude_control(
             &calculated_desired_orientation,
-            &quad.orientation,
-            &quad.angular_velocity,
-            quad.time_step,
+            &quad_state.orientation,
+            &(quad_state.angular_velocity / (2.0 * std::f32::consts::PI)),
+            time_step,
         );
-        quad.control(i, &config, thrust, &torque);
-        imu.update(quad.time_step)?;
+        let first_planner = planner_config.first().unwrap();
+        if i >= first_planner.step {
+            let _ = quad.control(i, thrust, &torque);
+        }
+        quad_state = quad.observe()?;
+        imu.update(time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
-        let (measured_accel, measured_gyro) = imu.read(true_accel, true_gyro)?;
+        let (measured_accel, _measured_gyro) = imu.read(true_accel, true_gyro)?;
         if i % (config.simulation.simulation_frequency / config.simulation.log_frequency) == 0 {
             if config.render_depth {
                 camera.render_depth(
-                    &quad.position,
-                    &quad.orientation,
+                    &quad_state.position,
+                    &quad_state.orientation,
                     &maze,
                     config.use_multithreading_depth_rendering,
                 )?;
             }
+
             if let Some(rec) = &rec {
                 rec.set_time_seconds("timestamp", time);
-                if trajectory.add_point(quad.position) {
+                let rerun_quad_state = quad_state.clone();
+                if trajectory.add_point(rerun_quad_state.position) {
                     log_trajectory(rec, &trajectory)?;
                 }
+                // log_joy(rec, thrust, &torque)?;
                 log_data(
                     rec,
-                    &quad,
+                    &rerun_quad_state,
                     &desired_position,
                     &desired_velocity,
                     &measured_accel,
-                    &measured_gyro,
+                    &quad_state.angular_velocity,
+                    &torque,
                 )?;
+                let rotation = nalgebra::UnitQuaternion::from_axis_angle(
+                    &Vector3::z_axis(),
+                    // std::f32::consts::FRAC_PI_2,
+                    0.0,
+                );
                 if config.render_depth {
                     log_depth_image(rec, &camera, config.use_multithreading_depth_rendering)?;
                     log_pinhole_depth(
                         rec,
                         &camera,
-                        quad.position,
-                        quad.orientation,
+                        rerun_quad_state.position,
+                        rotation * quad_state.orientation,
                         config.camera.rotation_transform,
                     )?;
                 }

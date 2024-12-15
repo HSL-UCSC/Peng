@@ -36,16 +36,19 @@
 //!
 //! ## Example
 //! ```
+//! use peng_quad::config;
 //! use nalgebra::Vector3;
 //! use peng_quad::{Quadrotor, SimulationError};
 //! let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 //! let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-//! let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix);
+//! let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 //! ```
 use rand::SeedableRng;
 use rayon::prelude::*;
 pub mod config;
+pub mod quadrotor;
 use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
+use quadrotor::{QuadrotorInterface, QuadrotorState};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use std::f32::consts::PI;
@@ -75,38 +78,17 @@ pub enum SimulationError {
     OtherError(String),
 }
 
-pub trait Quadrotor {
-    fn control(
-        &mut self,
-        step_number: usize,
-        config: &config::Config,
-        thrust: f32,
-        torque: &Vector3<f32>,
-    );
-
-    fn observe(
-        &self,
-    ) -> Result<
-        (
-            Vector3<f32>,
-            Vector3<f32>,
-            UnitQuaternion<f32>,
-            Vector3<f32>,
-        ),
-        SimulationError,
-    >;
-}
-
 /// Represents a quadrotor with its physical properties and state
 /// # Example
 /// ```
+/// use peng_quad::config;
 /// use nalgebra::Vector3;
 /// use peng_quad::Quadrotor;
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix);
+/// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 /// ```
-pub struct SimulatedQuadrotor {
+pub struct Quadrotor {
     /// Current position of the quadrotor in 3D space
     pub position: Vector3<f32>,
     /// Current velocity of the quadrotor
@@ -133,59 +115,84 @@ pub struct SimulatedQuadrotor {
     pub previous_thrust: f32,
     /// Previous Torque
     pub previous_torque: Vector3<f32>,
+    /// Config
+    pub config: config::SimulationConfig,
 }
 
-impl Quadrotor for SimulatedQuadrotor {
+impl QuadrotorInterface for Quadrotor {
     fn control(
         &mut self,
         step_number: usize,
-        config: &config::Config,
         thrust: f32,
         torque: &Vector3<f32>,
-    ) {
-        if step_number
-            % (config.simulation.simulation_frequency / config.simulation.control_frequency)
-            == 0
-        {
-            if config.use_rk4_for_dynamics_control {
-                self.update_dynamics_with_controls_rk4(thrust, &torque);
+    ) -> Result<(), SimulationError> {
+        if step_number % (self.config.simulation_frequency / self.config.control_frequency) == 0 {
+            if self.config.use_rk4_for_dynamics_control {
+                self.update_dynamics_with_controls_rk4(thrust, torque);
             } else {
-                self.update_dynamics_with_controls_euler(thrust, &torque);
+                self.update_dynamics_with_controls_euler(thrust, torque);
             }
             self.previous_thrust = thrust;
             self.previous_torque = *torque;
         } else {
             let previous_thrust = self.previous_thrust;
             let previous_torque = self.previous_torque;
-            if config.use_rk4_for_dynamics_update {
+            if self.config.use_rk4_for_dynamics_update {
                 self.update_dynamics_with_controls_rk4(previous_thrust, &previous_torque);
             } else {
                 self.update_dynamics_with_controls_euler(previous_thrust, &previous_torque);
             }
         }
+        Ok(())
     }
-    fn observe(
-        &self,
-    ) -> Result<
-        (
-            Vector3<f32>,
-            Vector3<f32>,
-            UnitQuaternion<f32>,
-            Vector3<f32>,
-        ),
-        SimulationError,
-    > {
-        return Ok((
-            self.position,
-            self.velocity,
-            self.orientation,
-            self.angular_velocity,
-        ));
+
+    fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
+        Ok(QuadrotorState {
+            time: 0.0,
+            position: self.position,
+            velocity: self.velocity,
+            acceleration: self.acceleration,
+            orientation: self.orientation,
+            angular_velocity: self.angular_velocity,
+        })
+    }
+
+    fn max_thrust(&self) -> f32 {
+        2.5 * self.gravity
+    }
+
+    // TDO: need a method to retrieve quadrotor physical constants
+    fn max_torque(&self) -> Vector3<f32> {
+        let motor_thrust = self.max_thrust() / 4.0;
+        let max_rp_torque = 2.0 * 0.65 * motor_thrust;
+        let yaw_torque = 2.0 * 0.005 * motor_thrust;
+        Vector3::new(max_rp_torque, max_rp_torque, yaw_torque)
+    }
+
+    /// Simulates IMU readings
+    /// # Returns
+    /// * A tuple containing the true acceleration and angular velocity of the quadrotor
+    /// # Errors
+    /// * Returns a SimulationError if the IMU readings cannot be calculated
+    /// # Example
+    /// ```
+    /// use peng_quad::config;
+    /// use nalgebra::Vector3;
+    /// use peng_quad::Quadrotor;
+    /// use peng_quad::quadrotor::QuadrotorInterface;
+    ///
+    /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
+    /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
+    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let (true_acceleration, true_angular_velocity) = quadrotor.read_imu().unwrap();
+    /// ```
+    fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
+        Ok((self.acceleration, self.angular_velocity))
     }
 }
 
 /// Implementation of the Quadrotor struct
-impl SimulatedQuadrotor {
+impl Quadrotor {
     /// Creates a new Quadrotor with default parameters
     /// # Arguments
     /// * `time_step` - The simulation time step in seconds
@@ -199,15 +206,18 @@ impl SimulatedQuadrotor {
     /// * Returns a SimulationError if the inertia matrix cannot be inverted
     /// # Example
     /// ```
+    /// use peng_quad::config;;
     /// use nalgebra::Vector3;
     /// use peng_quad::Quadrotor;
     ///
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix);
+    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// ```
+    /// TODO: time step to simulation config, others to quadrotor config
     pub fn new(
         time_step: f32,
+        config: config::SimulationConfig,
         mass: f32,
         gravity: f32,
         drag_coefficient: f32,
@@ -221,6 +231,7 @@ impl SimulatedQuadrotor {
                     "Failed to invert inertia matrix".to_string(),
                 ))?;
         Ok(Self {
+            config,
             position: Vector3::zeros(),
             velocity: Vector3::zeros(),
             acceleration: Vector3::zeros(),
@@ -243,12 +254,13 @@ impl SimulatedQuadrotor {
     /// * `control_torque` - The 3D torque vector applied to the quadrotor
     /// # Example
     /// ```
+    /// use peng_quad::config;;
     /// use nalgebra::Vector3;
     /// use peng_quad::Quadrotor;
     ///
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let control_thrust = mass * gravity;
     /// let control_torque = Vector3::new(0.0, 0.0, 0.0);
     /// quadrotor.update_dynamics_with_controls_euler(control_thrust, &control_torque);
@@ -277,11 +289,12 @@ impl SimulatedQuadrotor {
     /// * `control_torque` - The 3D torque vector applied to the quadrotor
     /// # Example
     /// ```
+    /// use peng_quad::config;;
     /// use nalgebra::Vector3;
     /// use peng_quad::Quadrotor;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let control_thrust = mass * gravity;
     /// let control_torque = Vector3::new(0.0, 0.0, 0.0);
     /// quadrotor.update_dynamics_with_controls_rk4(control_thrust, &control_torque);
@@ -327,12 +340,13 @@ impl SimulatedQuadrotor {
     /// * `state` - The state of the quadrotor
     /// # Example
     /// ```
+    /// use peng_quad::config;;
     /// use nalgebra::Vector3;
     /// use peng_quad::Quadrotor;
     /// use nalgebra::UnitQuaternion;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let state = quadrotor.get_state();
     /// ```
     pub fn get_state(&self) -> [f32; 13] {
@@ -348,12 +362,13 @@ impl SimulatedQuadrotor {
     /// * `state` - The state of the quadrotor
     /// # Example
     /// ```
+    /// use peng_quad::config;;
     /// use nalgebra::Vector3;
     /// use peng_quad::Quadrotor;
     /// use nalgebra::UnitQuaternion;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let state = [
     ///    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     /// ];
@@ -376,12 +391,13 @@ impl SimulatedQuadrotor {
     /// The derivative of the state
     /// # Example
     /// ```
+    /// use peng_quad::config;;
     /// use nalgebra::Vector3;
     /// use peng_quad::Quadrotor;
     /// use nalgebra::UnitQuaternion;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let state = [
     ///   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     /// ];
@@ -420,24 +436,6 @@ impl SimulatedQuadrotor {
         derivative[6..10].copy_from_slice(q_dot.coords.as_slice());
         derivative[10..13].copy_from_slice(angular_acceleration.as_slice());
         derivative
-    }
-    /// Simulates IMU readings
-    /// # Returns
-    /// * A tuple containing the true acceleration and angular velocity of the quadrotor
-    /// # Errors
-    /// * Returns a SimulationError if the IMU readings cannot be calculated
-    /// # Example
-    /// ```
-    /// use nalgebra::Vector3;
-    /// use peng_quad::Quadrotor;
-    ///
-    /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
-    /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-    /// let (true_acceleration, true_angular_velocity) = quadrotor.read_imu().unwrap();
-    /// ```
-    pub fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
-        Ok((self.acceleration, self.angular_velocity))
     }
 }
 /// Represents an Inertial Measurement Unit (IMU) with bias and noise characteristics
@@ -750,7 +748,7 @@ impl PIDController {
         let thrust = self.mass * total_acc_norm;
         let desired_orientation = if total_acc_norm > 1e-6 {
             let z_body = total_acceleration / total_acc_norm;
-            let yaw_rotation = UnitQuaternion::from_euler_angles(0.0, 0.0, desired_yaw);
+            let yaw_rotation = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), desired_yaw);
             let x_body_horizontal = yaw_rotation * Vector3::new(1.0, 0.0, 0.0);
             let y_body = z_body.cross(&x_body_horizontal).normalize();
             let x_body = y_body.cross(&z_body);
@@ -1775,6 +1773,7 @@ impl Planner for MinimumSnapWaypointPlanner {
             && (current_position - last_waypoint).norm() < 0.1)
     }
 }
+#[derive(Debug)]
 /// Represents a step in the planner schedule.
 /// # Example
 /// ```
@@ -1806,7 +1805,8 @@ pub struct PlannerStepConfig {
 /// * If the planner could not be created
 /// # Example
 /// ```
-/// use peng_quad::{PlannerManager, Quadrotor, Obstacle, PlannerStepConfig, update_planner};
+/// use peng_quad::config;
+/// use peng_quad::{PlannerManager, Quadrotor, Obstacle, PlannerStepConfig, update_planner, quadrotor::QuadrotorInterface};
 /// use nalgebra::Vector3;
 /// let simulation_frequency = 1000;
 /// let initial_position = Vector3::new(0.0, 0.0, 0.0);
@@ -1816,7 +1816,8 @@ pub struct PlannerStepConfig {
 /// let time = 0.0;
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let quad_state = quadrotor.observe().unwrap();
 /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
 /// let planner_config = vec![PlannerStepConfig {
 ///     step: 0,
@@ -1828,23 +1829,20 @@ pub struct PlannerStepConfig {
 ///        duration: 2.0
 ///        "#).unwrap(),
 /// }];
-/// update_planner(&mut planner_manager, step, time, simulation_frequency, &quadrotor, &obstacles, &planner_config).unwrap();
+/// update_planner(&mut planner_manager, step, time, simulation_frequency, &quad_state, &obstacles, &planner_config).unwrap();
 /// ```
 pub fn update_planner(
     planner_manager: &mut PlannerManager,
     step: usize,
     time: f32,
-    simulation_frequency: usize,
-    quad: &SimulatedQuadrotor,
+    _simulation_frequency: usize,
+    quad_state: &QuadrotorState,
     obstacles: &[Obstacle],
     planner_config: &[PlannerStepConfig],
 ) -> Result<(), SimulationError> {
-    if let Some(planner_step) = planner_config
-        .iter()
-        .find(|s| s.step * simulation_frequency == step * 1000)
-    {
+    if let Some(planner_step) = planner_config.iter().find(|s| s.step == step) {
         log::info!("Time: {:.2} s,\tSwitch {}", time, planner_step.planner_type);
-        planner_manager.set_planner(create_planner(planner_step, quad, time, obstacles)?);
+        planner_manager.set_planner(create_planner(planner_step, quad_state, time, obstacles)?);
     }
     Ok(())
 }
@@ -1860,7 +1858,8 @@ pub fn update_planner(
 /// * If the planner type is not recognized
 /// # Example
 /// ```
-/// use peng_quad::{PlannerType, Quadrotor, Obstacle, PlannerStepConfig, create_planner};
+/// use peng_quad::config;
+/// use peng_quad::{PlannerType, Quadrotor, Obstacle, PlannerStepConfig, create_planner, quadrotor::QuadrotorInterface};
 /// use nalgebra::Vector3;
 /// let step = PlannerStepConfig {
 ///    step: 0,
@@ -1875,9 +1874,10 @@ pub fn update_planner(
 /// let time = 0.0;
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let quadrotor = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let quadrotor_state = quadrotor.observe().unwrap();
 /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
-/// let planner = create_planner(&step, &quadrotor, time, &obstacles).unwrap();
+/// let planner = create_planner(&step, &quadrotor_state, time, &obstacles).unwrap();
 /// match planner {
 ///    PlannerType::MinimumJerkLine(_) => log::info!("Created MinimumJerkLine planner"),
 ///   _ => log::info!("Created another planner"),
@@ -1885,29 +1885,33 @@ pub fn update_planner(
 /// ```
 pub fn create_planner(
     step: &PlannerStepConfig,
-    quad: &SimulatedQuadrotor,
+    quad_state: &QuadrotorState,
     time: f32,
     obstacles: &[Obstacle],
 ) -> Result<PlannerType, SimulationError> {
     let params = &step.params;
     match step.planner_type.as_str() {
         "MinimumJerkLine" => Ok(PlannerType::MinimumJerkLine(MinimumJerkLinePlanner {
-            start_position: quad.position,
+            start_position: quad_state.position,
             end_position: parse_vector3(params, "end_position")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
             end_yaw: parse_f32(params, "end_yaw")?,
             start_time: time,
             duration: parse_f32(params, "duration")?,
         })),
+        "Hover" => Ok(PlannerType::Hover(HoverPlanner {
+            target_position: quad_state.position,
+            target_yaw: parse_f32(params, "target_yaw")?,
+        })),
         "Lissajous" => Ok(PlannerType::Lissajous(LissajousPlanner {
-            start_position: quad.position,
+            start_position: quad_state.position,
             center: parse_vector3(params, "center")?,
             amplitude: parse_vector3(params, "amplitude")?,
             frequency: parse_vector3(params, "frequency")?,
             phase: parse_vector3(params, "phase")?,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
             end_yaw: parse_f32(params, "end_yaw")?,
             ramp_time: parse_f32(params, "ramp_time")?,
         })),
@@ -1915,18 +1919,18 @@ pub fn create_planner(
             center: parse_vector3(params, "center")?,
             radius: parse_f32(params, "radius")?,
             angular_velocity: parse_f32(params, "angular_velocity")?,
-            start_position: quad.position,
+            start_position: quad_state.position,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
-            end_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
+            end_yaw: quad_state.orientation.euler_angles().2,
             ramp_time: parse_f32(params, "ramp_time")?,
         })),
         "ObstacleAvoidance" => Ok(PlannerType::ObstacleAvoidance(ObstacleAvoidancePlanner {
             target_position: parse_vector3(params, "target_position")?,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
             end_yaw: parse_f32(params, "end_yaw")?,
             obstacles: obstacles.to_owned(),
             k_att: parse_f32(params, "k_att")?,
@@ -1937,7 +1941,7 @@ pub fn create_planner(
             max_speed: parse_f32(params, "max_speed")?,
         })),
         "MinimumSnapWaypoint" => {
-            let mut waypoints = vec![quad.position];
+            let mut waypoints = vec![quad_state.position];
             waypoints.extend(
                 params["waypoints"]
                     .as_sequence()
@@ -1956,7 +1960,7 @@ pub fn create_planner(
                     })
                     .collect::<Result<Vec<Vector3<f32>>, SimulationError>>()?,
             );
-            let mut yaws = vec![quad.orientation.euler_angles().2];
+            let mut yaws = vec![quad_state.orientation.euler_angles().2];
             yaws.extend(
                 params["yaws"]
                     .as_sequence()
@@ -1983,10 +1987,10 @@ pub fn create_planner(
                 .map(PlannerType::MinimumSnapWaypoint)
         }
         "Landing" => Ok(PlannerType::Landing(LandingPlanner {
-            start_position: quad.position,
+            start_position: quad_state.position,
             start_time: time,
             duration: parse_f32(params, "duration")?,
-            start_yaw: quad.orientation.euler_angles().2,
+            start_yaw: quad_state.orientation.euler_angles().2,
         })),
         _ => Err(SimulationError::OtherError(format!(
             "Unknown planner type: {}",
@@ -2444,25 +2448,28 @@ pub fn ray_cast(
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{Quadrotor, log_data};
+/// use peng_quad::config;;
+/// use peng_quad::{Quadrotor, log_data, quadrotor::QuadrotorInterface};
 /// use nalgebra::Vector3;
 /// let rec = rerun::RecordingStreamBuilder::new("peng").connect().unwrap();
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let quad = Quadrotor::new(time_step, mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let quad_state = quadrotor.observe().unwrap();
 /// let desired_position = Vector3::new(0.0, 0.0, 0.0);
 /// let desired_velocity = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_accel = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_gyro = Vector3::new(0.0, 0.0, 0.0);
-/// log_data(&rec, &quad, &desired_position, &desired_velocity, &measured_accel, &measured_gyro).unwrap();
+/// log_data(&rec, &quad_state, &desired_position, &desired_velocity, &measured_accel, &measured_gyro, &Vector3::new(0.0, 0.0, 0.0)).unwrap();
 /// ```
 pub fn log_data(
     rec: &rerun::RecordingStream,
-    quad: &SimulatedQuadrotor,
+    quad_state: &QuadrotorState,
     desired_position: &Vector3<f32>,
     desired_velocity: &Vector3<f32>,
     measured_accel: &Vector3<f32>,
     measured_gyro: &Vector3<f32>,
+    torque: &Vector3<f32>,
 ) -> Result<(), SimulationError> {
     rec.log(
         "world/quad/desired_position",
@@ -2473,26 +2480,31 @@ pub fn log_data(
     rec.log(
         "world/quad/base_link",
         &rerun::Transform3D::from_translation_rotation(
-            rerun::Vec3D::new(quad.position.x, quad.position.y, quad.position.z),
+            rerun::Vec3D::new(
+                quad_state.position.x,
+                quad_state.position.y,
+                quad_state.position.z,
+            ),
             rerun::Quaternion::from_xyzw([
-                quad.orientation.i,
-                quad.orientation.j,
-                quad.orientation.k,
-                quad.orientation.w,
+                quad_state.orientation.i,
+                quad_state.orientation.j,
+                quad_state.orientation.k,
+                quad_state.orientation.w,
             ]),
         )
         .with_axis_length(0.7),
     )?;
-    let (quad_roll, quad_pitch, quad_yaw) = quad.orientation.euler_angles();
+    let (quad_roll, quad_pitch, quad_yaw) = quad_state.orientation.euler_angles();
     let quad_euler_angles: Vector3<f32> = Vector3::new(quad_roll, quad_pitch, quad_yaw);
     for (pre, vec) in [
-        ("position", &quad.position),
-        ("velocity", &quad.velocity),
+        ("position", &quad_state.position),
+        ("velocity", &quad_state.velocity),
         ("accel", measured_accel),
         ("orientation", &quad_euler_angles),
         ("gyro", measured_gyro),
         ("desired_position", desired_position),
         ("desired_velocity", desired_velocity),
+        ("torque", torque),
     ] {
         for (i, a) in ["x", "y", "z"].iter().enumerate() {
             rec.log(format!("{}/{}", pre, a), &rerun::Scalar::new(vec[i] as f64))?;
@@ -2798,7 +2810,6 @@ pub fn log_depth_image(
 /// let camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
 /// log_pinhole_depth(&rec, &camera, cam_position, cam_orientation, cam_transform).unwrap();
 /// ```
-
 pub fn log_pinhole_depth(
     rec: &rerun::RecordingStream,
     cam: &Camera,
@@ -2863,6 +2874,57 @@ pub fn color_map_fn(gray: f32) -> (u8, u8, u8) {
     let b = (27.2 + x * (3211.1 - x * (15327.97 - x * (27814.0 - x * (22569.18 - x * 6838.66)))))
         .clamp(0.0, 255.0) as u8;
     (r, g, b)
+}
+
+/// log joystick positions
+/// # Arguments
+/// * `rec` - The rerun::RecordingStream instance
+/// * `trajectory` - The Trajectory instance
+/// # Errors
+/// * If the data cannot be logged to the recording stream
+/// # Example
+/// ```no_run
+/// use peng_quad::{Trajectory, log_trajectory};
+/// use nalgebra::Vector3;
+/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
+/// let mut trajectory = Trajectory::new(nalgebra::Vector3::new(0.0, 0.0, 0.0));
+/// trajectory.add_point(nalgebra::Vector3::new(1.0, 0.0, 0.0));
+/// log_trajectory(&rec, &trajectory).unwrap();
+/// ```
+pub fn log_joy(
+    rec: &rerun::RecordingStream,
+    _thrust: f32,
+    _torque: &Vector3<f32>,
+) -> Result<(), SimulationError> {
+    let num_points = 100;
+    let radius = 1.0;
+    let circle_points: Vec<(f32, f32)> = (0..num_points)
+        .map(|i| {
+            let theta = i as f32 * 2.5 * PI / num_points as f32;
+            let x = radius * theta.cos();
+            let y = radius * theta.sin();
+            (x, y)
+        })
+        .collect();
+    rec.log_static(
+        "world/quad/joy/left",
+        &rerun::LineStrips2D::new([circle_points.clone()])
+            .with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    )?;
+    // rec.log(
+    //     "joy/right",
+    //     &rerun::LineStrips2D::new([circle_points])
+    //         .with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    // )?;
+    rec.log(
+        "world/quad/joy/left",
+        &rerun::Points2D::new([(0.0, 0.5)]).with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    )?;
+    // rec.log(
+    //     "joy/right",
+    //     &rerun::Points2D::new([(0.0, -0.5)]).with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+    // )?;
+    Ok(())
 }
 
 /// Fast square root function

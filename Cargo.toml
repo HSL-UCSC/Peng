@@ -11,10 +11,10 @@ documentation = "https://docs.rs/peng_quad/latest/peng_quad"
 homepage = "https://github.com/makeecat/Peng"
 repository = "https://github.com/makeecat/Peng"
 categories = [
-    "science::robotics",
-    "aerospace::simulation",
-    "aerospace::unmanned-aerial-vehicles",
-    "algorithms",
+  "science::robotics",
+  "aerospace::simulation",
+  "aerospace::unmanned-aerial-vehicles",
+  "algorithms",
 ]
 keywords = ["quadrotor", "quadcopter", "robotics", "drone", "simulation"]
 readme = "README.md"
@@ -30,7 +30,7 @@ lto = "thin"      # Do a second optimization pass over the entire program, inclu
 nalgebra = "0.33.2"
 rand = { version = "0.8.5", features = ["rand_chacha"] }
 rand_distr = "0.4.3"
-rerun = "0.19.1"
+rerun = "0.20.0"
 thiserror = "2.0.1"
 serde = { version = "1.0.214", features = ["derive"] }
 serde_yaml = "0.9.34"
@@ -38,3 +38,9 @@ env_logger = "0.11.5"
 log = "0.4.22"
 rayon = "1.10.0"
 rand_chacha = "0.3.1"
+tokio = { version = "1.41.0", features = ["full"] }
+binrw = "0.14.1"
+cyber_rc = { git = "https://github.com/friend0/CyberRC.git" }
+serialport = "4.6.0"
+tempfile = "3.14.0"
+prost = "0.13.3"
