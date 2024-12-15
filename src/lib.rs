@@ -2460,7 +2460,7 @@ pub fn ray_cast(
 /// let desired_velocity = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_accel = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_gyro = Vector3::new(0.0, 0.0, 0.0);
-/// log_data(&rec, &quad_state, &desired_position, &desired_velocity, &measured_accel, &measured_gyro, 0.0, &Vector3::new(0.0, 0.0, 0.0)).unwrap();
+/// log_data(&rec, &quad_state, &desired_position, &desired_velocity, &measured_accel, &measured_gyro, &Vector3::new(0.0, 0.0, 0.0)).unwrap();
 /// ```
 pub fn log_data(
     rec: &rerun::RecordingStream,
@@ -2469,7 +2469,6 @@ pub fn log_data(
     desired_velocity: &Vector3<f32>,
     measured_accel: &Vector3<f32>,
     measured_gyro: &Vector3<f32>,
-    _thrust: f32,
     torque: &Vector3<f32>,
 ) -> Result<(), SimulationError> {
     rec.log(
