@@ -18,6 +18,7 @@ categories = [
 ]
 keywords = ["quadrotor", "quadcopter", "robotics", "drone", "simulation"]
 readme = "README.md"
+default-run = "peng_quad"
 
 [profile.dev]
 opt-level = 1 # Enable a small amount of optimization in the dev profile.
