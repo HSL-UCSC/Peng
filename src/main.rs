@@ -1,5 +1,4 @@
 #![feature(thread_sleep_until)]
-use liftoff_quad::LiftoffQuad;
 use nalgebra::Vector3;
 use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::*;
@@ -7,11 +6,10 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-mod liftoff_quad;
-
 #[tokio::main]
 /// Main function for the simulation
 async fn main() -> Result<(), SimulationError> {
+
     let mut config_str = "config/quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
@@ -86,39 +84,34 @@ async fn main() -> Result<(), SimulationError> {
     // log::info!("Use rerun.io: {}", config.use_rerun);
     if let Some(rec) = &rec {
         rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
+
         rec.set_time_seconds("timestamp", 0);
         log_mesh(rec, config.mesh.division, config.mesh.spacing)?;
         log_maze_tube(rec, &maze)?;
         log_maze_obstacles(rec, &maze)?;
     }
-    let (mut quad, mass, gravity): (Box<dyn QuadrotorInterface>, f32, f32) = match config.quadrotor
-    {
+    let (mut quad, mass): (Box<dyn QuadrotorInterface>, f32) = match config.quadrotor {
         config::QuadrotorConfigurations::Peng(quad_config) => (
             Box::new(Quadrotor::new(
                 1.0 / config.simulation.simulation_frequency as f32,
                 config.simulation.clone(),
                 quad_config.mass,
-                quad_config.gravity,
+                config.simulation.gravity,
                 quad_config.drag_coefficient,
                 quad_config.inertia_matrix,
             )?),
             quad_config.mass,
-            quad_config.gravity,
         ),
-        config::QuadrotorConfigurations::Liftoff(ref liftoff_quad_config) => (
-            Box::new(LiftoffQuad::new(
-                1.0 / config.simulation.control_frequency as f32,
-                config.simulation.clone(),
-                liftoff_quad_config.clone(),
-            )?),
-            liftoff_quad_config.mass,
-            liftoff_quad_config.gravity,
-        ),
+        _ => {
+            return Err(SimulationError::OtherError(
+                "Unsupported quadrotor type".to_string(),
+            ))
+        }
     };
 
     println!(
         "[\x1b[32mINFO\x1b[0m peng_quad] Quadrotor: {:?} {:?}",
-        mass, gravity
+        mass, config.simulation.gravity
     );
     let _pos_gains = config.pid_controller.pos_gains;
     let _att_gains = config.pid_controller.att_gains;
@@ -128,7 +121,7 @@ async fn main() -> Result<(), SimulationError> {
         config.pid_controller.pos_max_int,
         config.pid_controller.att_max_int,
         mass,
-        gravity,
+        config.simulation.gravity,
     );
     log::info!("Starting simulation...");
     let mut i = 0;
@@ -198,13 +191,6 @@ async fn main() -> Result<(), SimulationError> {
             if let Some(rec) = &rec {
                 rec.set_time_seconds("timestamp", time);
                 let mut rerun_quad_state = quad_state.clone();
-                if let config::QuadrotorConfigurations::Liftoff(_) = config.quadrotor.clone() {
-                    rerun_quad_state.position = Vector3::new(
-                        quad_state.position.x,
-                        -quad_state.position.y,
-                        quad_state.position.z,
-                    );
-                }
                 if trajectory.add_point(rerun_quad_state.position) {
                     log_trajectory(rec, &trajectory)?;
                 }
