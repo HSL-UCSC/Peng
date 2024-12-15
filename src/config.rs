@@ -90,6 +90,7 @@ impl Default for SimulationConfig {
 /// Vehicle Specifig configuration
 pub enum QuadrotorConfigurations {
     Peng(QuadrotorConfig),
+    Liftoff(QuadrotorConfig),
 }
 
 #[derive(Copy, Clone, Debug, serde::Deserialize)]

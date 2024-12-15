@@ -9,7 +9,6 @@ use std::time::Instant;
 #[tokio::main]
 /// Main function for the simulation
 async fn main() -> Result<(), SimulationError> {
-
     let mut config_str = "config/quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
