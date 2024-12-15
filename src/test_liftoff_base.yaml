@@ -1,0 +1,133 @@
+use_rerun: true # Enable visualization using rerun.io
+render_depth: true # Enable rendering depth
+use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
+real_time: true # Enable real time mode. If not enabled, sim will run in fast time.
+
+rerun_blueprint: "config/peng_default_blueprint.rbl"
+
+simulation:
+  control_frequency: 200 # Frequency of control loop execution (Hz)
+  simulation_frequency: 1000 # Frequency of physics simulation updates (Hz)
+  log_frequency: 20 # Frequency of data logging (Hz)
+  duration: 70.0 # Total duration of the simulation (seconds)
+  gravity: 9.81 # Gravitational acceleration (m/s^2)
+  use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
+  use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
+
+quadrotor:
+  type: Liftoff
+  mass: 1.3 # Mass of the quadrotor (kg)
+  drag_coefficient: 0.000 # Aerodynamic drag coefficient
+  # Inertia matrix [Ixx, Ixy, Ixz, Iyx, Iyy, Iyz, Izx, Izy, Izz] (kg*m^2)
+  inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3]
+
+vehicle_configuration:
+  type: LiftoffConfiguration
+  ip_address: 0.0.0.0:9001
+
+pid_controller:
+  pos_gains: # PID gains for position control
+    kp: [7.1, 7.1, 11.9] # Proportional gains [x, y, z]
+    kd: [2.4, 2.4, 6.7] # Derivative gains [x, y, z]
+    ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
+  att_gains: # PID gains for attitude control
+    kp: [1.5, 1.5, 1.0] # Proportional gains [roll, pitch, yaw]
+    kd: [0.13, 0.13, 0.1] # Derivative gains [roll, pitch, yaw]
+    ki: [0.0, 0.0, 0.0] # Integral gains [roll, pitch, yaw]
+  pos_max_int: [10.0, 10.0, 10.0] # Maximum integral error for position control [x, y, z]
+  att_max_int: [0.5, 0.5, 0.5] # Maximum integral error for attitude control [roll, pitch, yaw]
+
+imu:
+  accel_noise_std: 0.02 # Standard deviation of accelerometer noise (m/s^2)
+  gyro_noise_std: 0.01 # Standard deviation of gyroscope noise (rad/s)
+  accel_bias_std: 0.0001 # Standard deviation of accelerometer bias instability (m/s^2)
+  gyro_bias_std: 0.0001 # Standard deviation of gyroscope bias instability (rad/s)
+
+maze:
+  lower_bounds: [-4.0, -2.0, 0.0] # Lower bounds of the maze [x, y, z] (m)
+  upper_bounds: [4.0, 2.0, 2.0] # Upper bounds of the maze [x, y, z] (m)
+  num_obstacles: 20 # Number of obstacles in the maze
+  obstacles_velocity_bounds: [0.2, 0.2, 0.1] # Maximum velocity of obstacles [x, y, z] (m/s)
+  obstacles_radius_bounds: [0.05, 0.1] # Range of obstacle radii [min, max] (m)
+
+camera:
+  resolution: [128, 96] # Camera resolution [width, height] (pixels)
+  fov_vertical: 90 # Vertical Field of View (degrees)
+  near: 0.1 # Near clipping plane (m)
+  far: 5.0 # Far clipping plane (m)
+  rotation_transform: [0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, -1.0, 0.0] # Rotates camera to positive x-axis
+
+mesh:
+  division: 7 # Number of divisions in the mesh grid
+  spacing: 0.5 # Spacing between mesh lines (m)
+
+planner_schedule:
+  # Minimum Jerk Line trajectory
+  - step: 1000 # Simulation step in ms to start this planner
+    planner_type: MinimumJerkLine
+    params:
+      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_yaw: 0.0 # Target end yaw angle (rad)
+      duration: 2.5 # Duration of the trajectory (s)
+
+  # Lissajous trajectory
+  - step: 5000
+    planner_type: Lissajous
+    params:
+      center: [0.5, 0.5, 1.0] # Center of the Lissajous curve [x, y, z] (m)
+      amplitude: [0.5, 0.5, 0.2] # Amplitudes of the curve [x, y, z] (m)
+      frequency: [1.0, 2.0, 3.0] # Frequencies of the curve [x, y, z] (Hz)
+      phase: [0.0, 1.5707963267948966, 0.0] # Phase offsets [x, y, z] (rad)
+      duration: 20.0 # Duration of the trajectory (s)
+      end_yaw: 6.283185307179586 # Target end yaw angle (2*PI rad)
+      ramp_time: 5.0 # Time for smooth transition (s)
+
+  # Circular trajectory
+  - step: 27000
+    planner_type: Circle
+    params:
+      center: [0.5, 0.5, 1.0] # Center of the circle [x, y, z] (m)
+      radius: 0.5 # Radius of the circle (m)
+      angular_velocity: 1.0 # Angular velocity (rad/s)
+      duration: 5.0 # Duration of the trajectory (s)
+      ramp_time: 2.0 # Time for smooth transition (s)
+
+  # Another Minimum Jerk Line trajectory
+  - step: 32000
+    planner_type: MinimumJerkLine
+    params:
+      end_position: [-2.5, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_yaw: 0.0 # Target end yaw angle (rad)
+      duration: 3.0 # Duration of the trajectory (s)
+
+  # Obstacle Avoidance trajectory
+  - step: 35000
+    planner_type: ObstacleAvoidance
+    params:
+      target_position: [2.5, 1.0, 0.5] # Target position [x, y, z] (m)
+      duration: 10.0 # Duration of the trajectory (s)
+      end_yaw: 0.0 # Target end yaw angle (rad)
+      k_att: 0.03 # Attractive force gain
+      k_rep: 0.01 # Repulsive force gain
+      k_vortex: 0.005 # Vortex force gain
+      d0: 0.5 # Obstacle influence distance (m)
+      d_target: 0.5 # Target influence distance (m)
+      max_speed: 0.1 # Maximum speed (m/s)
+
+  # Minimum Snap Waypoint trajectory
+  - step: 45000
+    planner_type: MinimumSnapWaypoint
+    params:
+      waypoints: # List of waypoints [x, y, z] (m)
+        - [1.0, 1.0, 1.5]
+        - [-1.0, 1.0, 1.75]
+        - [0.0, -1.0, 1.0]
+        - [0.0, 0.0, 0.5]
+      yaws: [1.5707963267948966, 3.141592653589793, -1.5707963267948966, 0.0] # Yaw angles at waypoints (rad)
+      segment_times: [5.0, 5.0, 5.0, 5.0] # Time to reach each waypoint (s)
+
+  # Landing trajectory
+  - step: 65000
+    planner_type: Landing
+    params:
+      duration: 5.0 # Duration of the landing maneuver (s)
