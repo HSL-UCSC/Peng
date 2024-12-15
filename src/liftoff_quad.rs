@@ -1,10 +1,9 @@
-use binrw::{binrw, BinRead, BinWrite};
+use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
 use nalgebra::{Matrix4, Quaternion, UnitQuaternion, Vector3};
 use peng_quad::config::{LiftoffQuadrotorConfig, SimulationConfig};
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
-use std::net::UdpSocket;
 use tokio::sync::watch;
 use tokio::time::Duration;
 
@@ -22,29 +21,22 @@ pub struct LiftoffQuad {
     pub previous_state: QuadrotorState,
     /// Initial State
     pub initial_state: Option<QuadrotorState>,
-    /// Simulation time step in seconds
-    pub time_step: f32,
     /// Config
     pub simulation_config: SimulationConfig,
     /// Configured physical parameters
     pub config: LiftoffQuadrotorConfig,
     /// Previous Thrust
     pub previous_thrust: f32,
-    /// Previous Torque
-    pub previous_torque: Vector3<f32>,
-    /// Quadrotor sample mutex
-    pub producer: watch::Sender<Option<Vec<u8>>>,
     /// Quadrotor sample mutex
     pub consumer: watch::Receiver<Option<Vec<u8>>>,
 }
 
 impl LiftoffQuad {
     pub fn new(
-        time_step: f32,
         simulation_config: SimulationConfig,
         config: LiftoffQuadrotorConfig,
     ) -> Result<Self, SimulationError> {
-        let (producer, mut consumer) = watch::channel(None::<Vec<u8>>);
+        let (producer, consumer) = watch::channel(None::<Vec<u8>>);
         let config_clone = config.clone();
         let producer_clone = producer.clone();
         tokio::spawn(async move {
@@ -99,11 +91,8 @@ impl LiftoffQuad {
             initial_state: None,
             simulation_config,
             config,
-            time_step,
             previous_thrust: 0.0,
-            previous_torque: Vector3::zeros(),
             consumer,
-            producer,
         })
     }
 
@@ -125,10 +114,6 @@ impl LiftoffQuad {
 
         // Combine all terms
         thrust_acceleration + gravity_body - rotational_acceleration
-    }
-
-    fn ensure_initial_is_set(&mut self, state: QuadrotorState) {
-        self.initial_state.get_or_insert(state);
     }
 }
 
@@ -154,9 +139,9 @@ impl QuadrotorInterface for LiftoffQuad {
             );
             // Given thrust and torque, calculate the control inputs
             // Clamp thrust and torque control inputs
-            let max_thrust = self.max_thrust();
+            let _max_thrust = self.max_thrust();
             let thrust = thrust.clamp(-5.0, 10.0);
-            let max_torque = self.max_torque();
+            let _max_torque = self.max_torque();
             // println!("Roll Torque: {:?}", torque.x);
             let torque = Vector3::new(
                 torque.x.clamp(-10.0, 10.0),
@@ -218,6 +203,15 @@ impl QuadrotorInterface for LiftoffQuad {
         }?;
 
         let initial_state = self.initial_state.get_or_insert_with(|| {
+            let get_initial_attitude = || -> UnitQuaternion<f32> {
+                let attitude = sample.attitude_quaternion();
+                UnitQuaternion::new_normalize(Quaternion::new(
+                    (1.0 - (attitude.k * attitude.k)).sqrt(),
+                    0.0,
+                    0.0,
+                    -attitude.k,
+                ))
+            };
             QuadrotorState {
                 time: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -228,15 +222,7 @@ impl QuadrotorInterface for LiftoffQuad {
                 acceleration: Vector3::zeros(),
                 // Store the initial yaw as the initial attitude so that we can adjust for it on
                 // subsequent samples
-                orientation: (|| -> UnitQuaternion<f32> {
-                    let attitude = sample.attitude_quaternion();
-                    UnitQuaternion::new_normalize(Quaternion::new(
-                        (1.0 - (attitude.k * attitude.k)).sqrt(),
-                        0.0,
-                        0.0,
-                        -attitude.k,
-                    ))
-                })(),
+                orientation: get_initial_attitude(),
                 // orientation: UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
                 angular_velocity: Vector3::zeros(),
             }
@@ -353,13 +339,9 @@ async fn feedback_loop_fast(
         .map_err(|e| SimulationError::OtherError(e.to_string()))?;
     let mut buf = [0; 2048];
     loop {
-        match socket.recv_from(&mut buf).await {
-            Ok((len, _)) => {
-                let _ = tx
-                    .send(Some(buf[..len].to_vec()))
-                    .map_err(|e| SimulationError::OtherError(e.to_string()))?;
-            }
-            Err(_) => (),
+        if let Ok((len, _)) = socket.recv_from(&mut buf).await {
+            tx.send(Some(buf[..len].to_vec()))
+                .map_err(|e| SimulationError::OtherError(e.to_string()))?;
         }
     }
 }
@@ -416,11 +398,11 @@ fn scale_throttle(thrust: f32) -> i32 {
 }
 
 fn scale_control(value: f32) -> i32 {
-    scale_to_rc_command_with_center(value, -32768 as f32, 0.0, 32767 as f32)
+    scale_to_rc_command_with_center(value, -32768_f32, 0.0, 32767_f32)
 }
 
 #[rustfmt::skip]
-const MOTOR_MIXING_MATRIX: Matrix4<f32> = Matrix4::new(
+const _MOTOR_MIXING_MATRIX: Matrix4<f32> = Matrix4::new(
     1.0, 1.0, 1.0, 1.0,
     -1.0, 1.0, -1.0, 1.0,
     -1.0, -1.0, 1.0, 1.0,
@@ -447,7 +429,6 @@ mod tests {
     #[test]
     fn test_acceleration_body() {
         let quad = LiftoffQuad::new(
-            0.01,
             SimulationConfig::default(),
             LiftoffQuadrotorConfig::default(),
         )

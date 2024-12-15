@@ -90,7 +90,7 @@ impl Default for SimulationConfig {
 /// Vehicle Specifig configuration
 pub enum QuadrotorConfigurations {
     Peng(QuadrotorConfig),
-    Liftoff(QuadrotorConfig),
+    Liftoff(LiftoffQuadrotorConfig),
 }
 
 #[derive(Copy, Clone, Debug, serde::Deserialize)]
@@ -134,6 +134,9 @@ impl QuadrotorConfig {
             .try_inverse()
             .ok_or(SimulationError::NalgebraError(
                 "Failed to invert inertia matrix".to_string(),
+            ))
+    }
+}
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]

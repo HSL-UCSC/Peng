@@ -146,8 +146,8 @@ impl QuadrotorInterface for Quadrotor {
         Ok(())
     }
 
-    fn observe(&mut self, step_number: usize) -> Result<QuadrotorState, SimulationError> {
-        return Ok(QuadrotorState {
+    fn observe(&mut self, _step_number: usize) -> Result<QuadrotorState, SimulationError> {
+        Ok(QuadrotorState {
             time: 0.0,
             position: self.position,
             velocity: self.velocity,
