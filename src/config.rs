@@ -130,12 +130,11 @@ impl QuadrotorConfig {
     }
 
     pub fn inverse_inertia_matrix(&self) -> Result<Matrix3<f32>, SimulationError> {
-        Ok(self
-            .inertia_matrix()
+        self.inertia_matrix()
             .try_inverse()
             .ok_or(SimulationError::NalgebraError(
                 "Failed to invert inertia matrix".to_string(),
-            ))?)
+            ))
     }
 }
 
