@@ -1,4 +1,9 @@
 #![feature(thread_sleep_until)]
+mod betaflight_quad;
+mod liftoff_quad;
+
+use betaflight_quad::BetaflightQuad;
+use config::Betaflight;
 use liftoff_quad::LiftoffQuad;
 use nalgebra::Vector3;
 use peng_quad::quadrotor::QuadrotorInterface;
@@ -6,8 +11,6 @@ use peng_quad::*;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-
-mod liftoff_quad;
 
 #[tokio::main]
 /// Main function for the simulation
@@ -110,6 +113,13 @@ async fn main() -> Result<(), SimulationError> {
                 liftoff_quad_config.clone(),
             )?),
             liftoff_quad_config.mass,
+        ),
+        config::QuadrotorConfigurations::Betaflight(ref betaflight_config) => (
+            Box::new(BetaflightQuad::new(
+                config.simulation.clone(),
+                betaflight_config.clone(),
+            )?),
+            betaflight_config.quadrotor_config.mass,
         ),
     };
 
