@@ -47,7 +47,7 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 pub mod config;
 pub mod quadrotor;
-use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector, Vector3};
+use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
 use quadrotor::{QuadrotorInterface, QuadrotorState};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
@@ -128,9 +128,9 @@ impl QuadrotorInterface for Quadrotor {
     ) -> Result<(), SimulationError> {
         if step_number % (self.config.simulation_frequency / self.config.control_frequency) == 0 {
             if self.config.use_rk4_for_dynamics_control {
-                self.update_dynamics_with_controls_rk4(thrust, &torque);
+                self.update_dynamics_with_controls_rk4(thrust, torque);
             } else {
-                self.update_dynamics_with_controls_euler(thrust, &torque);
+                self.update_dynamics_with_controls_euler(thrust, torque);
             }
             self.previous_thrust = thrust;
             self.previous_torque = *torque;
@@ -147,14 +147,14 @@ impl QuadrotorInterface for Quadrotor {
     }
 
     fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
-        return Ok(QuadrotorState {
+        Ok(QuadrotorState {
             time: 0.0,
             position: self.position,
             velocity: self.velocity,
             acceleration: self.acceleration,
             orientation: self.orientation,
             angular_velocity: self.angular_velocity,
-        });
+        })
     }
 
     fn max_thrust(&self) -> f32 {
@@ -1835,7 +1835,7 @@ pub fn update_planner(
     planner_manager: &mut PlannerManager,
     step: usize,
     time: f32,
-    simulation_frequency: usize,
+    _simulation_frequency: usize,
     quad_state: &QuadrotorState,
     obstacles: &[Obstacle],
     planner_config: &[PlannerStepConfig],
@@ -2469,7 +2469,7 @@ pub fn log_data(
     desired_velocity: &Vector3<f32>,
     measured_accel: &Vector3<f32>,
     measured_gyro: &Vector3<f32>,
-    thrust: f32,
+    _thrust: f32,
     torque: &Vector3<f32>,
 ) -> Result<(), SimulationError> {
     rec.log(
@@ -2894,8 +2894,8 @@ pub fn color_map_fn(gray: f32) -> (u8, u8, u8) {
 /// ```
 pub fn log_joy(
     rec: &rerun::RecordingStream,
-    thrust: f32,
-    torque: &Vector3<f32>,
+    _thrust: f32,
+    _torque: &Vector3<f32>,
 ) -> Result<(), SimulationError> {
     let num_points = 100;
     let radius = 1.0;
