@@ -74,6 +74,46 @@ cargo run --release config/quad.yaml
 - Configure trajectory planner parameters such as waypoints, obstacles, and trajectory type.
 - Configure visualization parameters such as camera intrinsics and depth rendering.
 
+### Running a SITL with Liftoff®: FPV Drone Racing
+
+This fork of Peng for the Hybrid Systems Lab supports interfaces to external simulators, name Liftoff®: FPV Drone Racing.
+Peng is a realistic FPV drone simualtion designed to give hobbyists and enthusiasts flight experienece that is transferrable
+to flying a real vehicle. Liftoff provides a means for retrieving detailed state feedback from the simulation from commands
+on a UDP port. With the addition of a CyberRC device, we can close the loop and fly in Liftoff with automatic control.
+
+To run Peng with Liftoff, follow these steps:
+
+1. Install Liftoff: FPV Drone Racing from [Steam](https://store.steampowered.com/app/410340/Liftoff_FPV_Drone_Racing/).
+
+2. Configure Liftoff telemetry so that the controller can get feedback from the drone.
+   See the guide [here](https://steamcommunity.com/sharedfiles/filedetails/?id=3160488434).
+   Liftoff provides feedback from the internal drone simulation at roughly 100Hz, which is quite good for position control.
+   The configuration values specified in this file influence what is included in the feedback packet we get from Liftoff.
+   By extension, this also influences how we need to parse the binary payload.
+   The binary parser is currently implemented to read data from this configuration:
+
+   ```json
+   {
+     "EndPoint": "127.0.0.1:9001",
+     "StreamFormat": [
+       "Timestamp",
+       "Position",
+       "Attitude",
+       "Gyro",
+       "Input",
+       "MotorRPM"
+     ]
+   }
+   ```
+
+   If you need to add or remove items from telemetry, you will also need to modify the LiftoffPacket struct
+   in `src/liftoff_quadrotor.rs`. Remote endpoints can also be specified, with the caveat that you will need to configure your network and interfaces to support such a setup.
+
+3. Attach a CyberRC device to the host PC that is running Peng. This device will be used to send control signals to Liftoff. The device should be connected to the host PC via USB. You will also need a USB to serial UART adapter to communicate with the device.
+
+4. Run Peng with a configuration file set up to run with Liftoff.
+   This configuration file will be quite similar to the stock configuration file used to run self contained simulations with Peng, with some minor additional configuration for the port to retrieve feedback from Liftoff, which serial interface the CyberrC is connnected to, and what baud rate to use to send serial commands to the device.
+
 ## 🔧 Troubleshooting
 
 If you encountered any issue with the rerun:
