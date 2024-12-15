@@ -33,7 +33,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-build-
 
-      - name: Run only on Ubuntu
+      - name: Install rerun requirements on Ubuntu
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get -y install \
@@ -48,7 +48,8 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
-            patchelf
+            patchelf \
+            libudev-dev
 
       - name: Build
         run: cargo build --verbose
