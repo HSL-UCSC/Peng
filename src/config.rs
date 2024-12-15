@@ -91,6 +91,7 @@ impl Default for SimulationConfig {
 pub enum QuadrotorConfigurations {
     Peng(QuadrotorConfig),
     Liftoff(LiftoffQuadrotorConfig),
+    Betaflight(Betaflight),
 }
 
 #[derive(Copy, Clone, Debug, serde::Deserialize)]
@@ -180,13 +181,38 @@ impl Default for LiftoffQuadrotorConfig {
     }
 }
 
-impl LiftoffQuadrotorConfig {
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(default)]
+/// Configuration for the quadrotor
+pub struct Betaflight {
+    pub quadrotor_config: QuadrotorConfig,
+    /// The IP address where Liftoff is publishing state data
+    pub vicon_address: String,
+    pub connection_timeout: tokio::time::Duration,
+    pub max_retry_delay: tokio::time::Duration,
+    pub serial_port: Option<String>,
+    pub baud_rate: u32,
+}
+
+impl Default for Betaflight {
+    fn default() -> Self {
+        Betaflight {
+            quadrotor_config: QuadrotorConfig::default(),
+            vicon_address: String::from("0.0.0.0:51001"),
+            connection_timeout: tokio::time::Duration::from_secs(5 * 60),
+            max_retry_delay: tokio::time::Duration::from_secs(30),
+            serial_port: None,
+            baud_rate: 460800,
+        }
+    }
+}
+impl Betaflight {
     /// Calculate all maximum torques and return them as a tuple
     pub fn max_torques(&self) -> (f32, f32, f32) {
-        let motor_thrust = self.max_thrust_kg / 4.0;
+        let motor_thrust = self.quadrotor_config.max_thrust_kg / 4.0;
         // The maximum roll and pitch torques
-        let max_rp_torque = 2.0 * self.arm_length_m * motor_thrust;
-        let yaw_torque = 2.0 * self.yaw_torque_constant * motor_thrust;
+        let max_rp_torque = 2.0 * self.quadrotor_config.arm_length_m * motor_thrust;
+        let yaw_torque = 2.0 * self.quadrotor_config.yaw_torque_constant * motor_thrust;
         (max_rp_torque, max_rp_torque, yaw_torque)
     }
 }
@@ -313,5 +339,16 @@ mod tests {
             _ => panic!("Failed to load Liftoff configuration"),
         };
         assert_eq!(liftoff_config.ip_address, "0.0.0.0:9001");
+    }
+
+    #[test]
+    fn test_betaflight_config() {
+        let config = Config::from_yaml("tests/testdata/test_betaflight_base.yaml")
+            .expect("failed to unwrap");
+        let liftoff_config = match config.quadrotor {
+            QuadrotorConfigurations::Betaflight(liftoff_config) => liftoff_config,
+            _ => panic!("Failed to load Liftoff configuration"),
+        };
+        assert_eq!(liftoff_config.vicon_address, "0.0.0.0:51001");
     }
 }

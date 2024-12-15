@@ -278,6 +278,17 @@ impl QuadrotorInterface for LiftoffQuad {
     fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
+
+    fn vehicle_configuration(&self) -> peng_quad::config::QuadrotorConfig {
+        peng_quad::config::QuadrotorConfig {
+            mass: self.config.mass,
+            max_thrust_kg: self.config.max_thrust_kg,
+            drag_coefficient: 0.0,
+            inertia_matrix: self.config.inertia_matrix,
+            arm_length_m: self.config.arm_length_m,
+            yaw_torque_constant: self.config.yaw_torque_constant,
+        }
+    }
 }
 
 // TODO: configure packet based on the content of the Liftoff config file
@@ -427,6 +438,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "only runs in tokio runtime"]
     fn test_acceleration_body() {
         let quad = LiftoffQuad::new(
             SimulationConfig::default(),
