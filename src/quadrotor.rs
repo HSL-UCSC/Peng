@@ -1,4 +1,3 @@
-use crate::config::QuadrotorConfigurations;
 use crate::SimulationError;
 use nalgebra::{UnitQuaternion, Vector3};
 
