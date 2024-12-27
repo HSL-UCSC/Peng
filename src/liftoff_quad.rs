@@ -65,14 +65,14 @@ impl LiftoffQuad {
                     })?;
                 while std::time::Instant::now() - start_time < std::time::Duration::from_secs(5) {
                     writer
-                        .write(&mut cyberrc::RcData {
+                        .write(cyber_rc::CyberRCMessageType::RcData(cyberrc::RcData {
                             throttle: 32767,
                             aileron: 0,
                             elevator: 0,
                             rudder: 0,
                             arm: 1,
                             mode: 0,
-                        })
+                        }))
                         .map_err(|e| SimulationError::OtherError(e.to_string()))?;
                     std::thread::sleep(Duration::from_millis(100));
                 }
@@ -161,19 +161,18 @@ impl QuadrotorInterface for LiftoffQuad {
             let elevator_command = -scale_control(normalized_pitch);
             let rudder_command = scale_control(normalized_yaw);
 
-            let mut cyberrc_data = cyberrc::RcData {
-                throttle: throttle_command,
-                // elevator: 0, // elevator_command,
-                aileron: aileron_command,
-                elevator: elevator_command,
-                rudder: rudder_command,
-                arm: 0,
-                mode: 0,
-            };
             self.previous_thrust = normalized_thrust * self.max_thrust();
             if let Some(writer) = &mut self.writer {
                 writer
-                    .write(&mut cyberrc_data)
+                    .write(cyber_rc::CyberRCMessageType::RcData(cyberrc::RcData {
+                        throttle: throttle_command,
+                        // elevator: 0, // elevator_command,
+                        aileron: aileron_command,
+                        elevator: elevator_command,
+                        rudder: rudder_command,
+                        arm: 0,
+                        mode: 0,
+                    }))
                     .map_err(|e| SimulationError::OtherError(e.to_string()))?;
             }
         }
@@ -230,8 +229,10 @@ impl QuadrotorInterface for LiftoffQuad {
 
         // Adjust the sample by the initial state
         // Adjust for the initial yaw - we take the starting yaw of the vehicle to be 0
-        let attitude_quaternion =
-            initial_state.orientation.clone().inverse() * sample.attitude_quaternion();
+        let initial_quaternion = initial_state.orientation.clone();
+        let attitude_quaternion = initial_quaternion.conjugate()
+            * sample.attitude_quaternion()
+            * initial_quaternion.clone();
         // let attitude_quaternion = sample.attitude_quaternion();
         // Asjut fot the initial position - we take the starting location of the vehicle to be the
         // origin
