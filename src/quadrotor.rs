@@ -21,7 +21,6 @@ pub struct QuadrotorState {
 /// Types implementing this trait can be used as a quadrotor in the simulation.
 /// The underlying model can be internal or external to the simulator.
 pub trait QuadrotorInterface {
-    // TODO remove config from control
     fn control(
         &mut self,
         step_number: usize,
