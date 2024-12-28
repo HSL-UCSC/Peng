@@ -3,7 +3,7 @@ render_depth: true # Enable rendering depth
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 real_time: true # Enable real time mode. If not enabled, sim will run in fast time.
 
-rerun_blueprint: "config/peng_default_blueprint.rbl"
+rerun_blueprint: "config/peng_updated_blueprint.rbl"
 
 simulation:
   control_frequency: 50 # Frequency of control loop execution (Hz)
