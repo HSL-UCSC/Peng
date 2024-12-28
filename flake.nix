@@ -15,6 +15,7 @@
     devShell = pkgs.mkShell {
       # Add Rust and Cargo to the environment
       buildInputs = [
+        pkgs.rust-analyzer
         pkgs.protobuf
         pkgs.cmake
         pkgs.rustup
