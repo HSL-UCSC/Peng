@@ -1,6 +1,6 @@
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
-use nalgebra::{Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
+use nalgebra::{AbstractRotation, Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
 use peng_quad::config;
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
@@ -84,68 +84,32 @@ impl BetaflightQuad {
         })
     }
 
-    fn euler_body_velocity(
+    /// Calculate the body-frame velocity of the quadrotor
+    /// Given q_ib, the quaternion that rotates from the inertial frame to the body frame,
+    /// p1, the position of the quadrotor at time t_n, p2, the position of the quadrotor at time t_n+1,
+    /// and the time step dt.
+    fn velocity_body(
         &self,
+        q_ib: UnitQuaternion<f32>,
         p1: Vector3<f32>, // Inertial position a t_n
         p2: Vector3<f32>, // Inertial position at t_n+1
-        q_ib: UnitQuaternion<f32>,
         dt: f32,
     ) -> Vector3<f32> {
         // Inertial velocity
         let v_inertial = (p2 - p1) / dt;
-
         // Transform to body frame
         let q_conjugate = q_ib.conjugate();
-        let v_body = q_conjugate
-            * UnitQuaternion::from_quaternion(Quaternion::from_parts(0.0, v_inertial))
-            * q_ib;
-
-        // Extract the vector part (x, y, z)
-        Vector3::new(v_body.i, v_body.j, v_body.k)
-    }
-
-    fn rk4_body_velocity(
-        &self,
-        q_ib: UnitQuaternion<f32>,
-        p1: Vector3<f32>, // Inertial position a t_n
-        p2: Vector3<f32>, // Inertial position at t_n+1
-        dt: f32,
-    ) -> Vector3<f32> {
-        let k1 = self.euler_body_velocity(p1, p2, q_ib, dt);
-
-        // k2: velocity at t + 0.5 * dt (assume midpoint position for simplicity)
-        let p_mid = p1 + 0.5 * (p2 - p1);
-        let k2 = self.euler_body_velocity(p1, p_mid, q_ib, dt * 0.5);
-
-        // k3: velocity at t + 0.5 * dt (another midpoint evaluation)
-        let k3 = self.euler_body_velocity(p_mid, p2, q_ib, dt * 0.5);
-
-        // k4: velocity at t + dt
-        let k4 = self.euler_body_velocity(p2, p2 + (p2 - p1), q_ib, dt);
-
-        // RK4 weighted sum
-        (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+        q_conjugate.transform_vector(&v_inertial)
     }
 
     // Function to calculate body-frame acceleration for NED coordinates
-    fn rk4_body_acceleration(
+    fn body_acceleration(
         &self,
         v1: Vector3<f32>, // Linear velocity in body frame
         v2: Vector3<f32>, // Linear velocity in body frame
+        dt: f32,
     ) -> Vector3<f32> {
-        // Calculate thrust acceleration (negative Z in NED body frame)
-        let thrust_acceleration = Vector3::new(
-            0.0,
-            0.0,
-            -self.previous_thrust / self.config.quadrotor_config.mass,
-        );
-        let dt = (self.state.time - self.previous_state.time) as f32;
-        let k1 = (v2 - v1) / dt;
-        let k2 = (v2 - (v1 + 0.5 * k1 * dt)) / dt;
-        let k3 = (v2 - (v1 + 0.5 * k2 * dt)) / dt;
-        let k4 = (v2 - (v1 + k3 * dt)) / dt;
-
-        (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+        (v2 - v1) / dt
     }
 
     fn angular_velocity(
@@ -160,33 +124,6 @@ impl BetaflightQuad {
 
         // Angular velocity in body frame
         Vector3::new(imag[0] * scale, imag[1] * scale, imag[2] * scale)
-    }
-
-    fn rk4_angular_velocity(
-        &self,
-        q_t: UnitQuaternion<f32>,
-        q_t_next: UnitQuaternion<f32>,
-        dt: f32,
-    ) -> Vector3<f32> {
-        // k1: angular velocity at t
-        let k1 = self.angular_velocity(q_t, q_t_next, dt);
-
-        // k2: midpoint evaluation
-        let q_mid = q_t.slerp(&q_t_next, 0.5); // Slerp to find midpoint quaternion
-        let k2 = self.angular_velocity(q_t, q_mid, dt * 0.5);
-
-        // k3: another midpoint evaluation
-        let k3 = self.angular_velocity(q_mid, q_t_next, dt * 0.5);
-
-        // k4: final evaluation
-        let k4 = self.angular_velocity(q_t_next, q_t_next, dt);
-
-        // Combine with RK4 formula
-        Vector3::<f32>::new(
-            (k1[0] + 2.0 * k2[0] + 2.0 * k3[0] + k4[0]) / 6.0,
-            (k1[1] + 2.0 * k2[1] + 2.0 * k3[1] + k4[1]) / 6.0,
-            (k1[2] + 2.0 * k2[2] + 2.0 * k3[2] + k4[2]) / 6.0,
-        )
     }
 }
 
@@ -260,24 +197,50 @@ impl QuadrotorInterface for BetaflightQuad {
             None => Err(SimulationError::OtherError("No packet".to_string())),
         }?;
 
-        // Calculate the body-frame velocity by rotating the inertial velocity using the
-        // attitude quaternion.
+        // TODO: use sample time for dt?
         let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
-        let v_body = self.rk4_body_velocity(
-            sample.rotation(),
-            sample.position(),
-            self.previous_state.position,
-            dt,
-        );
+        let (position, rotation) = if sample.occluded() {
+            // Extrapolate the position
+            let position = extrapolate_position(
+                self.previous_state.position,
+                self.previous_state.velocity,
+                dt,
+            );
+            // Extrapolate the rotation
+            let rotation = extrapolate_orientation(
+                self.previous_state.orientation,
+                self.previous_state.angular_velocity,
+                dt,
+            );
+            (position, rotation)
+        } else {
+            // Low-pass filter the position
+            let alpha_position = 0.8;
+            let position = alpha_position * sample.position()
+                + (1.0 - alpha_position) * self.previous_state.position;
+            // Low-pass filter the orientation
+            let alpha_rotation = 0.8;
+            let rotation = match self.previous_state.orientation.try_slerp(
+                &sample.rotation(),
+                alpha_rotation,
+                1e-6,
+            ) {
+                Some(rotation) => rotation,
+                None => sample.rotation(),
+            };
+            (position, rotation)
+        };
+
+        let v_body = self.velocity_body(rotation, position, self.previous_state.position, dt);
         let omega_body =
-            self.rk4_angular_velocity(self.previous_state.orientation, sample.rotation(), dt);
+            self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt);
         // Low-pass filter the angular velocity
         let alpha = 0.5;
         let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
-        let acceleration_body = self.rk4_body_acceleration(self.previous_state.velocity, v_body);
+        let acceleration_body = self.body_acceleration(self.previous_state.velocity, v_body, dt);
         self.state = QuadrotorState {
             time: step as f32 * dt,
-            position: sample.position(),
+            position: position,
             velocity: v_body,
             acceleration: acceleration_body,
             orientation: sample.rotation(),
@@ -314,39 +277,56 @@ impl QuadrotorInterface for BetaflightQuad {
     }
 }
 
-#[binrw]
-#[brw(little)]
-#[derive(Debug, Default, Clone)]
-pub struct UDPViconPacket {
-    pub frame: u32,            // Matches `I`: Unsigned int (4 bytes)
-    pub num_items: u8,         // Matches `B`: Unsigned char (1 byte)
-    pub header_id: u8,         // Matches `B`: Unsigned char (1 byte)
-    pub header_data_size: u16, // Matches `H`: Unsigned short (2 bytes)
-    #[br(count = 24)] // Matches `24s`: Fixed-length string
-    pub item_name: Vec<u8>, // Use `String` if you know it's UTF-8 encoded
-    pub x: f64,                // Matches `d`: Double (8 bytes)
-    pub y: f64,                // Matches `d`: Double (8 bytes)
-    pub z: f64,                // Matches `d`: Double (8 bytes)
-    pub rx: f64,               // Matches `d`: Double (8 bytes)
-    pub ry: f64,               // Matches `d`: Double (8 bytes)
-    pub rz: f64,               // Matches `d`: Double (8 bytes)
+fn extrapolate_position(
+    last_position: Vector3<f32>, // Previous position
+    velocity: Vector3<f32>,      // Velocity vector
+    dt: f32,                     // Time step
+) -> Vector3<f32> {
+    last_position + velocity * dt
+}
+
+fn extrapolate_orientation(
+    last_orientation: UnitQuaternion<f32>, // Previous orientation (unit quaternion)
+    angular_velocity: Vector3<f32>,        // Angular velocity in radians per second
+    dt: f32,                               // Time step (seconds)
+) -> UnitQuaternion<f32> {
+    // Compute the magnitude of the angular velocity
+    let omega_magnitude = angular_velocity.norm();
+
+    // If there's no significant angular velocity, return the previous orientation
+    if omega_magnitude.abs() < 1e-6 {
+        return last_orientation;
+    }
+
+    // Compute the axis of rotation (normalize angular velocity)
+    let rotation_axis = nalgebra::Unit::new_normalize(angular_velocity);
+
+    // Compute the angle of rotation
+    let rotation_angle = omega_magnitude * dt;
+
+    // Create the delta rotation as a unit quaternion
+    let delta_quaternion = UnitQuaternion::from_axis_angle(&rotation_axis.into(), rotation_angle);
+
+    // Apply the delta quaternion to the previous orientation
+    last_orientation * delta_quaternion
 }
 
 struct ViconPacket(vicon_sys::ViconSubject);
 
 impl ViconPacket {
+    // Rotation from Vicon frame to NED frame
+    // Does a rotation of pi radians about the x-axis
+    const R: Quaternion<f32> = Quaternion::<f32>::new(0.0, 1.0, 0.0, 0.0);
+
+    pub fn occluded(&self) -> bool {
+        self.0.occluded
+    }
+
     /// Returns the attitude quaternion in the NED frame
     pub fn rotation(&self) -> UnitQuaternion<f32> {
-        // FIXME: the rotation from Vicon to NED frame
-
-        let rquat = nalgebra::UnitQuaternion::<f32>::from_quaternion(
-            nalgebra::Quaternion::<f32>::identity(),
-        );
-        // Log rotation
+        let rquat = nalgebra::UnitQuaternion::<f32>::from_quaternion(ViconPacket::R);
+        // TODO: support other rotation types
         let rotation = match self.0.rotation {
-            // OutputRotation::Euler() => {
-            //     rerun::Quaternion::from_euler_angles(euler.x, euler.y, euler.z)
-            // }
             vicon_sys::RotationType::Quaternion(quat) => {
                 nalgebra::UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(
                     quat.w as f32,
@@ -361,8 +341,9 @@ impl ViconPacket {
     }
 
     pub fn position(&self) -> Vector3<f32> {
+        // convert from Vicon NWU to NED frame
         let position = self.0.origin;
-        nalgebra::Vector3::<f32>::new(position[0] as f32, position[1] as f32, position[2] as f32)
+        nalgebra::Vector3::<f32>::new(position[0] as f32, -position[1] as f32, -position[2] as f32)
     }
 }
 
