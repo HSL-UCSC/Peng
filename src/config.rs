@@ -188,6 +188,7 @@ pub struct Betaflight {
     pub quadrotor_config: QuadrotorConfig,
     /// The IP address where Liftoff is publishing state data
     pub vicon_address: String,
+    pub subject_name: String,
     pub connection_timeout: tokio::time::Duration,
     pub max_retry_delay: tokio::time::Duration,
     pub serial_port: Option<String>,
@@ -199,6 +200,7 @@ impl Default for Betaflight {
         Betaflight {
             quadrotor_config: QuadrotorConfig::default(),
             vicon_address: String::from("0.0.0.0:51001"),
+            subject_name: String::new(),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
             serial_port: None,
