@@ -12,6 +12,7 @@ simulation:
   duration: 70.0 # Total duration of the simulation (seconds)
   use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
   use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
+  gravity: 9.81 # Gravitational acceleration (m/s^2)
 
 quadrotor:
   type: "Betaflight"
@@ -24,6 +25,7 @@ quadrotor:
     max_thrust_kg: 223.
     arm_length_m: .065
     yaw_torque_constant: .0052
+  subject_name: "mob6"
   serial_port: "/dev/tty.usbserial-B001JE6N"
   baud_rate: 460800
 
@@ -70,7 +72,7 @@ planner_schedule:
   - step: 200 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
-      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
       duration: 0.5 # Duration of the trajectory (s)
 
@@ -78,18 +80,5 @@ planner_schedule:
   - step: 1200 # Simulation step in ms to start this planner
     planner_type: Hover
     params:
-      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       target_yaw: 0.0 # Target end yaw angle (rad)
-
-  - step: 2400 # Simulation step in ms to start this planner
-    planner_type: MinimumJerkLine
-    params:
-      end_position: [1.0, 0.0, 1.0] # Target end position [x, y, z] (m)
-      end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 2.5 # Duration of the trajectory (s)
-
-  # Landing trajectory
-  - step: 13000
-    planner_type: Landing
-    params:
-      duration: 10.0 # Duration of the landing maneuver (s)

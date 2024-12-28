@@ -6,6 +6,7 @@ use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
 use std::time::Duration;
 use tokio::sync::watch;
+use vicon_sys::HasViconHardware;
 
 /// Represents a physical quadrotor running a Betaflight controller.
 /// # Example
@@ -28,7 +29,7 @@ pub struct BetaflightQuad {
     /// Previous Thrust
     pub previous_thrust: f32,
     /// Quadrotor sample mutex
-    pub consumer: watch::Receiver<Option<Vec<u8>>>,
+    pub consumer: watch::Receiver<Option<vicon_sys::ViconSubject>>,
 }
 
 impl BetaflightQuad {
@@ -36,37 +37,39 @@ impl BetaflightQuad {
         simulation_config: config::SimulationConfig,
         config: config::Betaflight,
     ) -> Result<Self, SimulationError> {
-        let (producer, consumer) = watch::channel(None::<Vec<u8>>);
+        let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
         let config_clone = config.clone();
         let producer_clone = producer.clone();
         // Open a serial port to communicate with the quadrotor if one is specified
         let writer: Option<Writer> = match config.clone().serial_port {
             Some(port) => {
-                let mut writer = Writer::new(port.to_string(), config.baud_rate).map_err(|e| {
-                    SimulationError::OtherError(format!(
-                        "Failed to open SerialPort {:?}",
-                        e.to_string()
-                    ))
-                })?;
-                let start_time = std::time::Instant::now();
-                writer
-                    .serial_port
-                    .set_timeout(Duration::from_millis(50))
-                    .map_err(|e| {
-                        SimulationError::OtherError(format!(
-                            "Failed to set timeout {:?}",
-                            e.to_string()
-                        ))
-                    })?;
-                Some(writer)
+                // let mut writer = Writer::new(port.to_string(), config.baud_rate).map_err(|e| {
+                //     SimulationError::OtherError(format!(
+                //         "Failed to open SerialPort {:?}",
+                //         e.to_string()
+                //     ))
+                // })?;
+                // let start_time = std::time::Instant::now();
+                // writer
+                //     .serial_port
+                //     .set_timeout(Duration::from_millis(50))
+                //     .map_err(|e| {
+                //         SimulationError::OtherError(format!(
+                //             "Failed to set timeout {:?}",
+                //             e.to_string()
+                //         ))
+                //     })?;
+                // Some(writer)
+                None
             }
             None => {
                 println!("No serial port specified, writing to temp file");
                 None
             }
         };
+        let subject_name = config.clone().subject_name;
         tokio::spawn(async move {
-            let _ = feedback_loop(&config_clone.vicon_address, producer_clone).await;
+            let _ = feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
         });
         // Open a serial port to communicate with the quadrotor if one is specified
         Ok(Self {
@@ -253,11 +256,7 @@ impl QuadrotorInterface for BetaflightQuad {
         self.previous_state = self.state.clone();
 
         let sample = match self.consumer.borrow_and_update().clone() {
-            Some(packet) => {
-                let mut cursor = std::io::Cursor::new(packet);
-                ViconPacket::read(&mut cursor)
-                    .map_err(|e| SimulationError::OtherError(e.to_string()))
-            }
+            Some(packet) => Ok(ViconPacket(packet)),
             None => Err(SimulationError::OtherError("No packet".to_string())),
         }?;
 
@@ -265,16 +264,13 @@ impl QuadrotorInterface for BetaflightQuad {
         // attitude quaternion.
         let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
         let v_body = self.rk4_body_velocity(
-            sample.attitude_quaternion(),
+            sample.rotation(),
             sample.position(),
             self.previous_state.position,
             dt,
         );
-        let omega_body = self.rk4_angular_velocity(
-            self.previous_state.orientation,
-            sample.attitude_quaternion(),
-            dt,
-        );
+        let omega_body =
+            self.rk4_angular_velocity(self.previous_state.orientation, sample.rotation(), dt);
         // Low-pass filter the angular velocity
         let alpha = 0.5;
         let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
@@ -284,7 +280,7 @@ impl QuadrotorInterface for BetaflightQuad {
             position: sample.position(),
             velocity: v_body,
             acceleration: acceleration_body,
-            orientation: sample.attitude_quaternion(),
+            orientation: sample.rotation(),
             angular_velocity: omega_body,
         };
         Ok(self.state.clone())
@@ -321,7 +317,7 @@ impl QuadrotorInterface for BetaflightQuad {
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Default, Clone)]
-pub struct ViconPacket {
+pub struct UDPViconPacket {
     pub frame: u32,            // Matches `I`: Unsigned int (4 bytes)
     pub num_items: u8,         // Matches `B`: Unsigned char (1 byte)
     pub header_id: u8,         // Matches `B`: Unsigned char (1 byte)
@@ -336,42 +332,59 @@ pub struct ViconPacket {
     pub rz: f64,               // Matches `d`: Double (8 bytes)
 }
 
+struct ViconPacket(vicon_sys::ViconSubject);
+
 impl ViconPacket {
     /// Returns the attitude quaternion in the NED frame
-    pub fn attitude_quaternion(&self) -> UnitQuaternion<f32> {
+    pub fn rotation(&self) -> UnitQuaternion<f32> {
         // FIXME: the rotation from Vicon to NED frame
-        #[rustfmt::skip]
-        let r_vicon_to_ned = Rotation3::from_matrix_unchecked({
-            nalgebra::Matrix3::new(
-        1.0, 0.0, 0.0,  // First row
-        0.0, 1.0, 0.0,  // Second row
-        0.0, 0.0, 1.0,  // Third row (Identity rotation)
-            )
-        });
-        let orientation_v = Vector3::new(self.rx as f32, self.ry as f32, self.rz as f32);
-        let orientation_ned = r_vicon_to_ned * orientation_v;
-        UnitQuaternion::from_euler_angles(orientation_ned.x, orientation_ned.y, orientation_ned.z)
+
+        let rquat = nalgebra::UnitQuaternion::<f32>::from_quaternion(
+            nalgebra::Quaternion::<f32>::identity(),
+        );
+        // Log rotation
+        let rotation = match self.0.rotation {
+            // OutputRotation::Euler() => {
+            //     rerun::Quaternion::from_euler_angles(euler.x, euler.y, euler.z)
+            // }
+            vicon_sys::RotationType::Quaternion(quat) => {
+                nalgebra::UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(
+                    quat.w as f32,
+                    quat.i as f32,
+                    quat.j as f32,
+                    quat.k as f32,
+                ))
+            }
+            _ => panic!("Unsupported rotation type"),
+        };
+        rquat * rotation * rquat.conjugate()
     }
 
     pub fn position(&self) -> Vector3<f32> {
-        // FIXME: Get Vicon position mapping to NED
-        Vector3::new(self.x as f32, self.y as f32, self.z as f32)
+        let position = self.0.origin;
+        nalgebra::Vector3::<f32>::new(position[0] as f32, position[1] as f32, position[2] as f32)
     }
 }
 
+// FIXME: address for sdk
 async fn feedback_loop(
     address: &str,
-    tx: watch::Sender<Option<Vec<u8>>>,
+    subject_name: &str,
+    tx: watch::Sender<Option<vicon_sys::ViconSubject>>,
 ) -> Result<(), SimulationError> {
-    let socket = tokio::net::UdpSocket::bind(address.to_string())
-        .await
+    let mut vicon = vicon_sys::sys::ViconSystem::new("localhost")
         .map_err(|e| SimulationError::OtherError(e.to_string()))?;
-    let mut buf = [0; 2048];
     loop {
-        if let Ok((len, _)) = socket.recv_from(&mut buf).await {
-            tx.send(Some(buf[..len].to_vec()))
-                .map_err(|e| SimulationError::OtherError(e.to_string()))?;
-        }
+        // FIXME: vicon operating mode check block
+        if let Ok(subjects) = vicon.read_frame_subjects(vicon_sys::OutputRotation::Quaternion) {
+            // TODO: add search for all subjects
+            if let Some(sample) = subjects.first() {
+                if sample.name == subject_name {
+                    tx.send(Some(sample.clone()))
+                        .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+                }
+            }
+        };
     }
 }
 

@@ -245,10 +245,10 @@ async fn main() -> Result<(), SimulationError> {
             }
         }
         i += 1;
-        if time >= config.simulation.duration {
-            log::info!("Complete Simulation");
-            break;
-        }
+        // if time >= config.simulation.duration {
+        //     log::info!("Complete Simulation");
+        //     break;
+        // }
     }
     log::logger().flush();
     Ok(())
