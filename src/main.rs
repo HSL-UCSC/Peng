@@ -3,11 +3,12 @@ mod betaflight_quad;
 mod liftoff_quad;
 
 use betaflight_quad::BetaflightQuad;
-use config::Betaflight;
 use liftoff_quad::LiftoffQuad;
+use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
 use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::*;
+use std::f32::consts::PI;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -89,9 +90,7 @@ async fn main() -> Result<(), SimulationError> {
     // log::info!("Use rerun.io: {}", config.use_rerun);
     if let Some(rec) = &rec {
         rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
-
         rec.set_time_seconds("timestamp", 0);
-        log_mesh(rec, config.mesh.division, config.mesh.spacing)?;
         log_maze_tube(rec, &maze)?;
         log_maze_obstacles(rec, &maze)?;
     }
@@ -142,6 +141,14 @@ async fn main() -> Result<(), SimulationError> {
     let frame_time = Duration::from_secs_f32(time_step);
     let mut next_frame = Instant::now();
     let mut quad_state = quad.observe(i)?;
+    // Observe Loop Warmup
+    let start_time = Instant::now();
+    loop {
+        if start_time.elapsed() >= Duration::new(5, 0) {
+            let _ = quad.observe(i);
+            break; // Exit the loop after 3 seconds
+        }
+    }
     loop {
         // If real-time mode is enabled, sleep until the next frame simulation frame
         if config.real_time {
@@ -181,13 +188,13 @@ async fn main() -> Result<(), SimulationError> {
             &quad_state.angular_velocity,
             time_step,
         );
-        println!("Desired Position: {:?}", desired_position);
-        println!("Desired Orientation: {:?}", calculated_desired_orientation);
-        println!("Desired Torque: {:?}", torque);
+        // println!("Desired Position: {:?}", desired_position);
+        // println!("Desired Orientation: {:?}", calculated_desired_orientation);
         let first_planner = planner_config.first().unwrap();
-        if i >= first_planner.step {
-            let _ = quad.control(i, thrust, &torque);
-        }
+        let mut control_out: Option<(f32, Vector3<f32>)> = None;
+        // if i >= first_planner.step {
+        control_out = quad.control(i, thrust, &torque)?;
+        // }
         quad_state = quad.observe(i)?;
         imu.update(time_step)?;
         let (true_accel, true_gyro) = quad.read_imu()?;
@@ -205,39 +212,48 @@ async fn main() -> Result<(), SimulationError> {
             if let Some(rec) = &rec {
                 rec.set_time_seconds("timestamp", time);
                 let mut rerun_quad_state = quad_state.clone();
-                if let config::QuadrotorConfigurations::Liftoff(_) = config.quadrotor.clone() {
-                    rerun_quad_state.position = Vector3::new(
-                        quad_state.position.x,
-                        -quad_state.position.y,
-                        quad_state.position.z,
-                    );
-                }
-                let rerun_quad_state = quad_state.clone();
+                match config.quadrotor.clone() {
+                    config::QuadrotorConfigurations::Peng(_) => (),
+                    config::QuadrotorConfigurations::Liftoff(_) => {
+                        rerun_quad_state.position = Vector3::new(
+                            quad_state.position.x,
+                            -quad_state.position.y,
+                            quad_state.position.z,
+                        );
+                    }
+                    config::QuadrotorConfigurations::Betaflight(_) => {
+                        rerun_quad_state.position = Vector3::new(
+                            quad_state.position.x,
+                            quad_state.position.y,
+                            quad_state.position.z,
+                        );
+                        // rerun_quad_state.orientation =
+                        //     UnitQuaternion::from_axis_angle(&Vector3::x_axis(), -PI)
+                        //         * rerun_quad_state.orientation;
+                    }
+                };
                 if trajectory.add_point(rerun_quad_state.position) {
                     log_trajectory(rec, &trajectory)?;
                 }
-                // log_joy(rec, thrust, &torque)?;
+                let euler_d = calculated_desired_orientation.euler_angles();
                 log_data(
                     rec,
                     &rerun_quad_state,
                     &desired_position,
+                    &Vector3::new(euler_d.0, euler_d.1, euler_d.2),
                     &desired_velocity,
                     &measured_accel,
                     &quad_state.angular_velocity,
                     &torque,
                 )?;
-                let rotation = nalgebra::UnitQuaternion::from_axis_angle(
-                    &Vector3::z_axis(),
-                    // std::f32::consts::FRAC_PI_2,
-                    0.0,
-                );
+                log_control(rec, thrust, torque, control_out)?;
                 if config.render_depth {
                     log_depth_image(rec, &camera, config.use_multithreading_depth_rendering)?;
                     log_pinhole_depth(
                         rec,
                         &camera,
                         rerun_quad_state.position,
-                        rotation * quad_state.orientation,
+                        rerun_quad_state.orientation,
                         config.camera.rotation_transform,
                     )?;
                 }
@@ -245,10 +261,10 @@ async fn main() -> Result<(), SimulationError> {
             }
         }
         i += 1;
-        // if time >= config.simulation.duration {
-        //     log::info!("Complete Simulation");
-        //     break;
-        // }
+        if time >= config.simulation.duration {
+            log::info!("Complete Simulation");
+            break;
+        }
     }
     log::logger().flush();
     Ok(())

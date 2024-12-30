@@ -125,7 +125,7 @@ impl QuadrotorInterface for Quadrotor {
         step_number: usize,
         thrust: f32,
         torque: &Vector3<f32>,
-    ) -> Result<(), SimulationError> {
+    ) -> Result<Option<(f32, Vector3<f32>)>, SimulationError> {
         if step_number % (self.config.simulation_frequency / self.config.control_frequency) == 0 {
             if self.config.use_rk4_for_dynamics_control {
                 self.update_dynamics_with_controls_rk4(thrust, torque);
@@ -143,7 +143,7 @@ impl QuadrotorInterface for Quadrotor {
                 self.update_dynamics_with_controls_euler(previous_thrust, &previous_torque);
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     fn observe(&mut self, _step_number: usize) -> Result<QuadrotorState, SimulationError> {
@@ -691,14 +691,20 @@ impl PIDController {
         current_angular_velocity: &Vector3<f32>,
         dt: f32,
     ) -> Vector3<f32> {
-        let error_orientation = current_orientation.inverse() * desired_orientation;
+        // dbg!(desired_orientation);
+        // dbg!(current_orientation);
+        // dbg!(current_angular_velocity);
+        // let frame = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), PI);
+        let error_orientation = current_orientation.inverse() * (desired_orientation);
         let (roll_error, pitch_error, yaw_error) = error_orientation.euler_angles();
         let error_angles = Vector3::new(roll_error, pitch_error, yaw_error);
+        dbg!(error_angles);
         self.integral_att_error += error_angles * dt;
         self.integral_att_error = self
             .integral_att_error
             .zip_map(&self.max_integral_att, |int, max| int.clamp(-max, max));
         let error_angular_velocity = -current_angular_velocity; // TODO: Add desired angular velocity
+        dbg!(error_angular_velocity);
         self.kpid_att[0].component_mul(&error_angles)
             + self.kpid_att[1].component_mul(&error_angular_velocity)
             + self.kpid_att[2].component_mul(&self.integral_att_error)
@@ -746,7 +752,6 @@ impl PIDController {
     ) -> (f32, UnitQuaternion<f32>) {
         let error_position = desired_position - current_position;
         let error_velocity = desired_velocity - current_velocity;
-        println!("Position error: {:?}", error_position);
         self.integral_pos_error += error_position * dt;
         self.integral_pos_error = self
             .integral_pos_error
@@ -758,7 +763,7 @@ impl PIDController {
         let total_acceleration = acceleration + gravity_compensation;
         let total_acc_norm = total_acceleration.norm();
         let thrust = self.mass * total_acc_norm;
-        let desired_orientation = if total_acc_norm > 1e-6 {
+        let desired_orientation = if total_acc_norm > 1e-3 {
             let z_body = total_acceleration / total_acc_norm;
             let yaw_rotation = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), desired_yaw);
             let x_body_horizontal = yaw_rotation * Vector3::new(1.0, 0.0, 0.0);
@@ -1912,7 +1917,7 @@ pub fn create_planner(
             duration: parse_f32(params, "duration")?,
         })),
         "Hover" => Ok(PlannerType::Hover(HoverPlanner {
-            target_position: quad_state.position,
+            target_position: parse_vector3(params, "end_position")?,
             target_yaw: parse_f32(params, "target_yaw")?,
         })),
         "Lissajous" => Ok(PlannerType::Lissajous(LissajousPlanner {
@@ -2478,6 +2483,7 @@ pub fn log_data(
     rec: &rerun::RecordingStream,
     quad_state: &QuadrotorState,
     desired_position: &Vector3<f32>,
+    desired_orientation: &Vector3<f32>,
     desired_velocity: &Vector3<f32>,
     measured_accel: &Vector3<f32>,
     measured_gyro: &Vector3<f32>,
@@ -2513,6 +2519,7 @@ pub fn log_data(
         ("velocity", &quad_state.velocity),
         ("accel", measured_accel),
         ("orientation", &quad_euler_angles),
+        ("desired_orientation", &desired_orientation),
         ("gyro", measured_gyro),
         ("desired_position", desired_position),
         ("desired_velocity", desired_velocity),
@@ -2524,6 +2531,32 @@ pub fn log_data(
     }
     Ok(())
 }
+
+pub fn log_control(
+    rec: &rerun::RecordingStream,
+    thrust: f32,
+    torque: Vector3<f32>,
+    control_out: Option<(f32, Vector3<f32>)>,
+) -> Result<(), SimulationError> {
+    if let Some((thrust_ppm, torque_ppm)) = control_out {
+        rec.log("ppm/throttle", &rerun::Scalar::new(thrust_ppm as f64))?;
+        rec.log("control/thrust", &rerun::Scalar::new(thrust as f64))?;
+        for (i, a) in ["x", "y", "z"].iter().enumerate() {
+            rec.log(
+                format!("ppm/{}/{}", "torque", a),
+                &rerun::Scalar::new(torque_ppm[i] as f64),
+            )?;
+        }
+        for (i, a) in ["x", "y", "z"].iter().enumerate() {
+            rec.log(
+                format!("control/{}/{}", "torque", a),
+                &rerun::Scalar::new(torque[i] as f64),
+            )?;
+        }
+    };
+    Ok(())
+}
+
 /// Log the maze tube to the rerun recording stream
 /// # Arguments
 /// * `rec` - The rerun::RecordingStream instance
@@ -2678,53 +2711,7 @@ pub fn log_trajectory(
     )?;
     Ok(())
 }
-/// Log mesh data to the rerun recording stream
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `division` - The number of divisions in the mesh
-/// * `spacing` - The spacing between divisions
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::log_mesh;
-/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
-/// log_mesh(&rec, 10, 0.1).unwrap();
-/// ```
-pub fn log_mesh(
-    rec: &rerun::RecordingStream,
-    division: usize,
-    spacing: f32,
-) -> Result<(), SimulationError> {
-    let grid_size: usize = division + 1;
-    let half_grid_size: f32 = (division as f32 * spacing) / 2.0;
-    let points: Vec<rerun::external::glam::Vec3> = (0..grid_size)
-        .flat_map(|i| {
-            (0..grid_size).map(move |j| {
-                rerun::external::glam::Vec3::new(
-                    j as f32 * spacing - half_grid_size,
-                    i as f32 * spacing - half_grid_size,
-                    0.0,
-                )
-            })
-        })
-        .collect();
-    let horizontal_lines: Vec<Vec<rerun::external::glam::Vec3>> = (0..grid_size)
-        .map(|i| points[i * grid_size..(i + 1) * grid_size].to_vec())
-        .collect();
-    let vertical_lines: Vec<Vec<rerun::external::glam::Vec3>> = (0..grid_size)
-        .map(|j| (0..grid_size).map(|i| points[i * grid_size + j]).collect())
-        .collect();
-    let line_strips: Vec<Vec<rerun::external::glam::Vec3>> =
-        horizontal_lines.into_iter().chain(vertical_lines).collect();
-    rec.log(
-        "world/mesh",
-        &rerun::LineStrips3D::new(line_strips)
-            .with_colors([rerun::Color::from_rgb(255, 255, 255)])
-            .with_radii([0.02]),
-    )?;
-    Ok(())
-}
+
 /// Log depth image data to the rerun recording stream
 ///
 /// When the depth value is `f32::INFINITY`, the pixel is considered invalid and logged as black
