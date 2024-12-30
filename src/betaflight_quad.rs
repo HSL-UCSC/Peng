@@ -4,6 +4,7 @@ use nalgebra::{AbstractRotation, Matrix4, Quaternion, Rotation3, UnitQuaternion,
 use peng_quad::config;
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
+use std::f32::consts::PI;
 use std::time::Duration;
 use tokio::sync::watch;
 use vicon_sys::HasViconHardware;
@@ -43,24 +44,23 @@ impl BetaflightQuad {
         // Open a serial port to communicate with the quadrotor if one is specified
         let writer: Option<Writer> = match config.clone().serial_port {
             Some(port) => {
-                // let mut writer = Writer::new(port.to_string(), config.baud_rate).map_err(|e| {
-                //     SimulationError::OtherError(format!(
-                //         "Failed to open SerialPort {:?}",
-                //         e.to_string()
-                //     ))
-                // })?;
-                // let start_time = std::time::Instant::now();
-                // writer
-                //     .serial_port
-                //     .set_timeout(Duration::from_millis(50))
-                //     .map_err(|e| {
-                //         SimulationError::OtherError(format!(
-                //             "Failed to set timeout {:?}",
-                //             e.to_string()
-                //         ))
-                //     })?;
-                // Some(writer)
-                None
+                let mut writer = Writer::new(port.to_string(), config.baud_rate).map_err(|e| {
+                    SimulationError::OtherError(format!(
+                        "Failed to open SerialPort {:?}",
+                        e.to_string()
+                    ))
+                })?;
+                let start_time = std::time::Instant::now();
+                writer
+                    .serial_port
+                    .set_timeout(Duration::from_millis(25))
+                    .map_err(|e| {
+                        SimulationError::OtherError(format!(
+                            "Failed to set timeout {:?}",
+                            e.to_string()
+                        ))
+                    })?;
+                Some(writer)
             }
             None => {
                 println!("No serial port specified, writing to temp file");
@@ -98,8 +98,8 @@ impl BetaflightQuad {
         // Inertial velocity
         let v_inertial = (p2 - p1) / dt;
         // Transform to body frame
-        let q_conjugate = q_ib.conjugate();
-        q_conjugate.transform_vector(&v_inertial)
+        // let q_inv = q_ib.inverse();
+        q_ib.transform_vector(&v_inertial)
     }
 
     // Function to calculate body-frame acceleration for NED coordinates
@@ -117,22 +117,15 @@ impl BetaflightQuad {
         q1: UnitQuaternion<f32>,
         q2: UnitQuaternion<f32>,
         dt: f32,
+        threshold: f32,
     ) -> Vector3<f32> {
         let delta_q = q2 * q1.conjugate();
-        let imag = [delta_q.i, delta_q.j, delta_q.k];
-        let scale = 2.0 / dt;
-
-        // Angular velocity in body frame
-        Vector3::new(imag[0] * scale, imag[1] * scale, imag[2] * scale)
-    }
-}
-
-struct Vec3(Vector3<f32>);
-
-impl TryFrom<(f32, f32, f32)> for Vec3 {
-    type Error = SimulationError;
-    fn try_from(value: (f32, f32, f32)) -> Result<Self, Self::Error> {
-        Ok(Vec3(Vector3::new(value.0, value.1, value.2)))
+        let delta_q = UnitQuaternion::from_quaternion(delta_q.normalize());
+        let (axis, angle) = delta_q.axis_angle().unwrap_or((Vector3::x_axis(), 0.0));
+        if angle.abs() < threshold {
+            return Vector3::zeros(); // Return zero angular velocity
+        }
+        axis.into_inner() * (angle / dt)
     }
 }
 
@@ -142,42 +135,41 @@ impl QuadrotorInterface for BetaflightQuad {
         step_number: usize,
         thrust: f32,
         torque: &Vector3<f32>,
-    ) -> Result<(), SimulationError> {
-        if step_number
-            % (self.simulation_config.simulation_frequency
-                / self.simulation_config.control_frequency)
-            == 0
+    ) -> Result<Option<(f32, Vector3<f32>)>, SimulationError> {
         {
             // Given thrust and torque, calculate the control inputs
             // Clamp thrust and torque control inputs
             let _max_thrust = self.max_thrust();
-            let thrust = thrust.clamp(-5.0, 10.0);
+            let thrust = thrust.clamp(0_f32, 1.0_f32);
             let _max_torque = self.max_torque();
-            // println!("Roll Torque: {:?}", torque.x);
-            let torque = Vector3::new(
-                torque.x.clamp(-10.0, 10.0),
-                torque.y.clamp(-10.0, 10.0),
-                torque.z.clamp(-20.0, 20.0),
-            );
-
-            // Normalize inputs
-            let normalized_thrust = normalize(thrust, 0.0, 20.0);
-            let normalized_roll = normalize(torque.x, -20.0, 20.0);
-            let normalized_pitch = normalize(torque.y, -6.0, 6.0);
-            let normalized_yaw = normalize(torque.z, -20.0, 20.0);
-
-            // TODO: scale to PPM commands
-            self.previous_thrust = normalized_thrust * self.max_thrust();
+            // let torque_x = torque.x.clamp(-10.0, 10.0);
+            // let torque_y = torque.y.clamp(-10.0, 10.0);
+            // let torque_z = torque.z.clamp(-20.0, 20.0);
+            dbg!(torque);
+            self.previous_thrust = thrust;
+            let thrust_ppm = scale_control(thrust, 0_f32, 1_f32);
+            let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
+            let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
+            let rudder_ppm = -scale_control(torque.z, -10_f32, 10_f32);
             if let Some(writer) = &mut self.writer {
                 writer
                     .write(CyberRCMessageType::PpmUpdate(cyberrc::PpmUpdateAll {
                         line: 1,
-                        channel_values: vec![1500, 1500, 1000, 1500],
+                        channel_values: vec![
+                            aileron_ppm as i32,
+                            elevator_ppm as i32,
+                            thrust_ppm as i32,
+                            rudder_ppm as i32,
+                        ],
                     }))
                     .map_err(|e| SimulationError::OtherError(e.to_string()))?;
             }
+            let control_out = (
+                thrust_ppm,
+                Vector3::new(aileron_ppm, elevator_ppm, rudder_ppm),
+            );
+            Ok(Some(control_out))
         }
-        Ok(())
     }
 
     /// Observe the current state of the quadrotor
@@ -198,8 +190,17 @@ impl QuadrotorInterface for BetaflightQuad {
         }?;
 
         // TODO: use sample time for dt?
-        let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
+        // let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
+        // let dt = 1.0 / 120.0;
+        // let dt = (step as f32) * (1.0 / self.simulation_config.simulation_frequency as f32)
+        //     - self.previous_state.time;
+        // dbg!(step, self.previous_state.time);
+        // dbg!(dt);
+        // This needs to match the sample rate of the Vicon system.
+        // Ideally, this will use the time steps or real time
+        let dt = 1_f32 / 120_f32;
         let (position, rotation) = if sample.occluded() {
+            eprintln!("Extrapolate ---------");
             // Extrapolate the position
             let position = extrapolate_position(
                 self.previous_state.position,
@@ -214,16 +215,15 @@ impl QuadrotorInterface for BetaflightQuad {
             );
             (position, rotation)
         } else {
-            // Low-pass filter the position
             let alpha_position = 0.8;
             let position = alpha_position * sample.position()
                 + (1.0 - alpha_position) * self.previous_state.position;
             // Low-pass filter the orientation
-            let alpha_rotation = 0.8;
+            let alpha_rotation = 0.5;
             let rotation = match self.previous_state.orientation.try_slerp(
                 &sample.rotation(),
                 alpha_rotation,
-                1e-6,
+                1e-3,
             ) {
                 Some(rotation) => rotation,
                 None => sample.rotation(),
@@ -233,17 +233,19 @@ impl QuadrotorInterface for BetaflightQuad {
 
         let v_body = self.velocity_body(rotation, position, self.previous_state.position, dt);
         let omega_body =
-            self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt);
+            self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt, 0.1);
+        // println!("Unfiltered Omega");
+        // dbg!(omega_body);
         // Low-pass filter the angular velocity
         let alpha = 0.5;
         let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
         let acceleration_body = self.body_acceleration(self.previous_state.velocity, v_body, dt);
         self.state = QuadrotorState {
-            time: step as f32 * dt,
+            time: dt,
             position: position,
             velocity: v_body,
             acceleration: acceleration_body,
-            orientation: sample.rotation(),
+            orientation: rotation,
             angular_velocity: omega_body,
         };
         Ok(self.state.clone())
@@ -314,36 +316,32 @@ fn extrapolate_orientation(
 struct ViconPacket(vicon_sys::ViconSubject);
 
 impl ViconPacket {
-    // Rotation from Vicon frame to NED frame
-    // Does a rotation of pi radians about the x-axis
-    const R: Quaternion<f32> = Quaternion::<f32>::new(0.0, 1.0, 0.0, 0.0);
-
     pub fn occluded(&self) -> bool {
         self.0.occluded
     }
 
     /// Returns the attitude quaternion in the NED frame
     pub fn rotation(&self) -> UnitQuaternion<f32> {
-        let rquat = nalgebra::UnitQuaternion::<f32>::from_quaternion(ViconPacket::R);
-        // TODO: support other rotation types
+        let rquat = nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3::x_axis(), PI);
         let rotation = match self.0.rotation {
-            vicon_sys::RotationType::Quaternion(quat) => {
+            vicon_sys::RotationType::Quaternion(q) => {
+                let mut q = q.normalize(); // Ensure unit quaternion
+                if q.w < 0.0 {
+                    q = -q; // Force consistent quaternion sign
+                }
                 nalgebra::UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(
-                    quat.w as f32,
-                    quat.i as f32,
-                    quat.j as f32,
-                    quat.k as f32,
+                    q.w as f32, q.i as f32, q.j as f32, q.k as f32,
                 ))
             }
             _ => panic!("Unsupported rotation type"),
         };
-        rquat * rotation * rquat.conjugate()
+        rotation
     }
 
     pub fn position(&self) -> Vector3<f32> {
         // convert from Vicon NWU to NED frame
         let position = self.0.origin;
-        nalgebra::Vector3::<f32>::new(position[0] as f32, -position[1] as f32, -position[2] as f32)
+        nalgebra::Vector3::<f32>::new(position[0] as f32, position[1] as f32, position[2] as f32)
     }
 }
 
@@ -369,65 +367,19 @@ async fn feedback_loop(
     }
 }
 
-/// Scale a value from a given range to a new range
+/// Scale a control value to a stick command, given a minimum and maximum input range
 /// # Example
 /// ```
-/// let value = 0.0;
-/// let min = -10.0;
-/// let max = 10.0;
-/// let scaled_value = normalize(value, min, max);
-/// assert_eq!(scaled_value, 0.5);
+/// let throttle = scale_control(0.0, 0_f32, 20_f32);
+/// assert_eq!(throttle, 1000_f32);
+/// let throttle = scale_control(250.0, 0_f32, 200_f32);
+/// assert_eq!(throttle, 2000_f32);
 /// ```
-fn normalize(value: f32, min: f32, max: f32) -> f32 {
-    (value - min) / (max - min)
-}
+fn scale_control(value: f32, min_torque: f32, max_torque: f32) -> f32 {
+    let torque = value.clamp(min_torque, max_torque);
+    let min_ppm = 1000_f32;
+    let max_ppm = 2000_f32;
 
-// TODO clean up all the type casts
-// TODO assert value is normalized
-fn scale_to_rc_command(value: f32, min: i32, max: i32) -> i32 {
-    let value = value.clamp(0.0, 1.0);
-    // assert value is in the range 0 to 1
-    // Scale normalized value to the range between min and max
-    let range = max - min;
-    let scaled_value = min as f32 + value * range as f32;
-    scaled_value as i32
-    // // Calculate the offset from the center within the range
-    // (center + scaled_value as i32) as i32
+    let ppm_range = max_ppm - min_ppm;
+    min_ppm + ((torque - min_torque) * ppm_range) / (max_torque - min_torque)
 }
-
-fn scale_to_rc_command_with_center(value: f32, min: f32, center: f32, max: f32) -> i32 {
-    let value = value.clamp(0.0, 1.0);
-    let output = if value < 0.5 {
-        // Map to the lower half (min to center)
-        center - (center - min) * (0.5 - value) * 2.0
-    } else {
-        // Map to the upper half (center to max)
-        center + (max - center) * (value - 0.5) * 2.0
-    };
-    output as i32
-}
-
-/// Scale a thrust value to a throttle command
-/// Throttle is inverted from Xinput to Liftoff
-/// # Example
-/// ```
-/// let thrust = 0.0;
-/// let throttle = scale_throttle(thrust);
-/// assert_eq!(throttle, 0);
-/// ```
-fn scale_throttle(thrust: f32) -> i32 {
-    // thrust is inverted from Xinput to Liftoff
-    -scale_to_rc_command(thrust, -32768, 32767)
-}
-
-fn scale_control(value: f32) -> i32 {
-    scale_to_rc_command_with_center(value, -32768_f32, 0.0, 32767_f32)
-}
-
-#[rustfmt::skip]
-const _MOTOR_MIXING_MATRIX: Matrix4<f32> = Matrix4::new(
-    1.0, 1.0, 1.0, 1.0,
-    -1.0, 1.0, -1.0, 1.0,
-    -1.0, -1.0, 1.0, 1.0,
-    1.0, -1.0, -1.0, 1.0,
-);

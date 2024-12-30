@@ -123,7 +123,7 @@ impl QuadrotorInterface for LiftoffQuad {
         step_number: usize,
         thrust: f32,
         torque: &Vector3<f32>,
-    ) -> Result<(), SimulationError> {
+    ) -> Result<Option<(f32, Vector3<f32>)>, SimulationError> {
         if step_number
             % (self.simulation_config.simulation_frequency
                 / self.simulation_config.control_frequency)
@@ -176,7 +176,7 @@ impl QuadrotorInterface for LiftoffQuad {
                     .map_err(|e| SimulationError::OtherError(e.to_string()))?;
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Observe the current state of the quadrotor
