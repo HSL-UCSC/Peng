@@ -75,10 +75,10 @@ planner_schedule:
     params:
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 0.5 # Duration of the trajectory (s)
+      duration: 5.0 # Duration of the trajectory (s)
 
   # Hover
-  - step: 2400 # Simulation step in ms to start this planner
+  - step: 3700 # Simulation step in ms to start this planner
     planner_type: Hover
     params:
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
