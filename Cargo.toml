@@ -30,7 +30,6 @@ lto = "thin"      # Do a second optimization pass over the entire program, inclu
 nalgebra = "0.33.2"
 rand = { version = "0.8.5", features = ["rand_chacha"] }
 rand_distr = "0.4.3"
-rerun = "0.20.0"
 thiserror = "2.0.1"
 serde = { version = "1.0.214", features = ["derive"] }
 serde_yaml = "0.9.34"
@@ -45,3 +44,4 @@ serialport = "4.6.0"
 tempfile = "3.14.0"
 prost = "0.13.3"
 vicon-sys = { git = "https://github.com/HSL-UCSC/vicon-rs.git", version = "0.2.0" }
+rerun = "0.21.0"
