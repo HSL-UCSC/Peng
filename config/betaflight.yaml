@@ -62,7 +62,7 @@ camera:
   fov_vertical: 90 # Vertical Field of View (degrees)
   near: 0.1 # Near clipping plane (m)
   far: 5.0 # Far clipping plane (m)
-  rotation_transform: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] # Rotates camera to positive x-axis
+  rotation_transform: [0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, -1.0, 0.0] # Rotates camera to positive x-axis
 
 mesh:
   division: 8 # Number of divisions in the mesh grid

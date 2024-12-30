@@ -150,7 +150,7 @@ impl QuadrotorInterface for BetaflightQuad {
             let thrust_ppm = scale_control(thrust, 0_f32, 1_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
             let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
-            let rudder_ppm = -scale_control(torque.z, -10_f32, 10_f32);
+            let rudder_ppm = scale_control(-torque.z, -10_f32, 10_f32);
             if let Some(writer) = &mut self.writer {
                 writer
                     .write(CyberRCMessageType::PpmUpdate(cyberrc::PpmUpdateAll {
