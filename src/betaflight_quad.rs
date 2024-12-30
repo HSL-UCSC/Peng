@@ -142,10 +142,6 @@ impl QuadrotorInterface for BetaflightQuad {
             let _max_thrust = self.max_thrust();
             let thrust = thrust.clamp(0_f32, 1.0_f32);
             let _max_torque = self.max_torque();
-            // let torque_x = torque.x.clamp(-10.0, 10.0);
-            // let torque_y = torque.y.clamp(-10.0, 10.0);
-            // let torque_z = torque.z.clamp(-20.0, 20.0);
-            dbg!(torque);
             self.previous_thrust = thrust;
             let thrust_ppm = scale_control(thrust, 0_f32, 1_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
