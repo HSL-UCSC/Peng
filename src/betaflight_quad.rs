@@ -140,13 +140,12 @@ impl QuadrotorInterface for BetaflightQuad {
             // Given thrust and torque, calculate the control inputs
             // Clamp thrust and torque control inputs
             let _max_thrust = self.max_thrust();
-            let thrust = thrust.clamp(0_f32, 1.0_f32);
             let _max_torque = self.max_torque();
             self.previous_thrust = thrust;
-            let thrust_ppm = scale_control(thrust, 0_f32, 1_f32);
+            let thrust_ppm = scale_control(thrust, 0.0_f32, 1.75_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
             let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
-            let rudder_ppm = scale_control(-torque.z, -10_f32, 10_f32);
+            let rudder_ppm = scale_control(-torque.z, -15_f32, 15_f32);
             if let Some(writer) = &mut self.writer {
                 writer
                     .write(CyberRCMessageType::PpmUpdate(cyberrc::PpmUpdateAll {
@@ -219,7 +218,7 @@ impl QuadrotorInterface for BetaflightQuad {
             let rotation = match self.previous_state.orientation.try_slerp(
                 &sample.rotation(),
                 alpha_rotation,
-                1e-3,
+                1e-6,
             ) {
                 Some(rotation) => rotation,
                 None => sample.rotation(),
@@ -227,13 +226,13 @@ impl QuadrotorInterface for BetaflightQuad {
             (position, rotation)
         };
 
-        let v_body = self.velocity_body(rotation, position, self.previous_state.position, dt);
+        let v_body = self.velocity_body(rotation, self.previous_state.position, position, dt);
         let omega_body =
             self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt, 0.1);
         // println!("Unfiltered Omega");
         // dbg!(omega_body);
         // Low-pass filter the angular velocity
-        let alpha = 0.5;
+        let alpha = 0.8;
         let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
         let acceleration_body = self.body_acceleration(self.previous_state.velocity, v_body, dt);
         self.state = QuadrotorState {
