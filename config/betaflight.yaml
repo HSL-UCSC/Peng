@@ -9,7 +9,7 @@ simulation:
   control_frequency: 50 # Frequency of control loop execution (Hz)
   simulation_frequency: 250 # Frequency of physics simulation updates (Hz)
   log_frequency: 20 # Frequency of data logging (Hz)
-  duration: 300.0 # Total duration of the simulation (seconds)
+  duration: 60.0 # Total duration of the simulation (seconds)
   use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
   use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
   gravity: 9.81 # Gravitational acceleration (m/s^2)
@@ -70,22 +70,22 @@ mesh:
 
 planner_schedule:
   # Minimum Jerk Line trajectory
-  - step: 1200 # Simulation step in ms to start this planner
+  - step: 600 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
       duration: 3.0 # Duration of the trajectory (s)
 
-  # # Hover
-  # - step: 5700 # Simulation step in ms to start this planner
-  #   planner_type: Hover
-  #   params:
-  #     end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
-  #     target_yaw: 0.0 # Target end yaw angle (rad)
+  # Hover
+  - step: 1200 # Simulation step in ms to start this planner
+    planner_type: Hover
+    params:
+      end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+      target_yaw: 0.0 # Target end yaw angle (rad)
 
-  # # Landing trajectory
-  # - step: 5000 
-  #   planner_type: Landing
-  #   params:
-  #     duration: 10.0 # Duration of the landing maneuver (s)
+  # Landing trajectory
+  - step: 11400
+    planner_type: Landing
+    params:
+      duration: 3.0 # Duration of the landing maneuver (s)
