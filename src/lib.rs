@@ -695,7 +695,7 @@ impl PIDController {
         // dbg!(current_orientation);
         // dbg!(current_angular_velocity);
         // let frame = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), PI);
-        let error_orientation = current_orientation.inverse() * (desired_orientation);
+        let error_orientation = current_orientation.inverse() * desired_orientation;
         let (roll_error, pitch_error, yaw_error) = error_orientation.euler_angles();
         let error_angles = Vector3::new(roll_error, pitch_error, yaw_error);
         self.integral_att_error += error_angles * dt;
