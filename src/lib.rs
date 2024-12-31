@@ -698,13 +698,11 @@ impl PIDController {
         let error_orientation = current_orientation.inverse() * (desired_orientation);
         let (roll_error, pitch_error, yaw_error) = error_orientation.euler_angles();
         let error_angles = Vector3::new(roll_error, pitch_error, yaw_error);
-        dbg!(error_angles);
         self.integral_att_error += error_angles * dt;
         self.integral_att_error = self
             .integral_att_error
             .zip_map(&self.max_integral_att, |int, max| int.clamp(-max, max));
         let error_angular_velocity = -current_angular_velocity; // TODO: Add desired angular velocity
-        dbg!(error_angular_velocity);
         self.kpid_att[0].component_mul(&error_angles)
             + self.kpid_att[1].component_mul(&error_angular_velocity)
             + self.kpid_att[2].component_mul(&self.integral_att_error)
@@ -752,6 +750,8 @@ impl PIDController {
     ) -> (f32, UnitQuaternion<f32>) {
         let error_position = desired_position - current_position;
         let error_velocity = desired_velocity - current_velocity;
+        dbg!(error_position);
+        dbg!(error_velocity);
         self.integral_pos_error += error_position * dt;
         self.integral_pos_error = self
             .integral_pos_error
