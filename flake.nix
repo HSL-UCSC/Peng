@@ -22,6 +22,7 @@
         pkgs.clang
         pkgs.cmake
         pkgs.cargo-binstall
+        pkgs.rerun
       ];
 
       # Optionally, set environment variables
@@ -34,15 +35,9 @@
         export CARGO_NET_GIT_FETCH_WITH_CLI=true
         export LD_LIBRARY_PATH=/Users/m0/Developer/vicon-sys/vendor/libvicon/
         export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"  # Ensure it uses your SSH config
-        # export RUSTUP_TOOLCHAIN=nightly
-
-        # Ensure rustup-managed Rust binaries take precedence
-        # export PATH="$HOME/.cargo/bin:$PATH"
         # Start Zsh if not already the active shell
         echo "Entering Rust development environment..."
         rustup install stable
-        # rustup default nightly
-        cargo binstall --force rerun-cli@0.21.0
         cargo fetch # Pre-fetch dependencies defined in Cargo.toml
         if [ "$SHELL" != "$(command -v zsh)" ]; then
           export PATH="$HOME/.cargo/bin:$PATH"
