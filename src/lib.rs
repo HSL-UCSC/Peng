@@ -2474,10 +2474,12 @@ pub fn ray_cast(
 /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 /// let quad_state = quadrotor.observe(0).unwrap();
 /// let desired_position = Vector3::new(0.0, 0.0, 0.0);
+/// let desired_orientation = Vector3::new(0.0, 0.0, 0.0);
 /// let desired_velocity = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_accel = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_gyro = Vector3::new(0.0, 0.0, 0.0);
-/// log_data(&rec, &quad_state, &desired_position, &desired_velocity, &measured_accel, &measured_gyro, &Vector3::new(0.0, 0.0, 0.0)).unwrap();
+/// let measured_torque = Vector3::new(0.0, 0.0, 0.0);
+/// log_data(&rec, &quad_state, &desired_position, &desired_orientation, &desired_velocity, &measured_accel, &measured_gyro, &measured_torque).unwrap();
 /// ```
 pub fn log_data(
     rec: &rerun::RecordingStream,
