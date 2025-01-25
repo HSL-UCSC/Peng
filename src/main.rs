@@ -151,7 +151,7 @@ async fn main() -> Result<(), SimulationError> {
     loop {
         // If real-time mode is enabled, sleep until the next frame simulation frame
         if config.real_time {
-            tokio::time::sleep_until(next_frame);
+            tokio::time::sleep_until(next_frame).await;
             next_frame += frame_time;
         }
         let time = time_step * i as f32;
