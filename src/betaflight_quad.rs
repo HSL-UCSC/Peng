@@ -7,6 +7,7 @@ use peng_quad::SimulationError;
 use std::f32::consts::PI;
 use std::time::Duration;
 use tokio::sync::watch;
+#[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
 
 /// Represents a physical quadrotor running a Betaflight controller.
@@ -30,6 +31,7 @@ pub struct BetaflightQuad {
     /// Previous Thrust
     pub previous_thrust: f32,
     /// Quadrotor sample mutex
+    #[cfg(feature = "vicon")]
     pub consumer: watch::Receiver<Option<vicon_sys::ViconSubject>>,
 }
 
@@ -38,9 +40,12 @@ impl BetaflightQuad {
         simulation_config: config::SimulationConfig,
         config: config::Betaflight,
     ) -> Result<Self, SimulationError> {
-        let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
+        #[cfg(feature = "vicon")]
+        {
+            let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
+            let producer_clone = producer.clone();
+        }
         let config_clone = config.clone();
-        let producer_clone = producer.clone();
         // Open a serial port to communicate with the quadrotor if one is specified
         let writer: Option<Writer> = match config.clone().serial_port {
             Some(port) => {
@@ -68,6 +73,7 @@ impl BetaflightQuad {
             }
         };
         let subject_name = config.clone().subject_name;
+        #[cfg(feature = "vicon")]
         tokio::spawn(async move {
             let _ = feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
         });
@@ -80,6 +86,7 @@ impl BetaflightQuad {
             simulation_config,
             config,
             previous_thrust: 0.0,
+            #[cfg(feature = "vicon")]
             consumer,
         })
     }
@@ -169,6 +176,7 @@ impl QuadrotorInterface for BetaflightQuad {
 
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
+    #[cfg(feature = "vicon")]
     fn observe(&mut self, step: usize) -> Result<QuadrotorState, SimulationError> {
         if !self
             .consumer
@@ -246,6 +254,11 @@ impl QuadrotorInterface for BetaflightQuad {
         Ok(self.state.clone())
     }
 
+    #[cfg(not(feature = "vicon"))]
+    fn observe(&mut self, step: usize) -> Result<QuadrotorState, SimulationError> {
+        Ok(QuadrotorState::default())
+    }
+
     fn max_thrust(&self) -> f32 {
         self.config.quadrotor_config.max_thrust_kg
     }
@@ -308,8 +321,10 @@ fn extrapolate_orientation(
     last_orientation * delta_quaternion
 }
 
+#[cfg(feature = "vicon")]
 struct ViconPacket(vicon_sys::ViconSubject);
 
+#[cfg(feature = "vicon")]
 impl ViconPacket {
     pub fn occluded(&self) -> bool {
         self.0.occluded
@@ -341,6 +356,7 @@ impl ViconPacket {
 }
 
 // FIXME: address for sdk
+#[cfg(feature = "vicon")]
 async fn feedback_loop(
     address: &str,
     subject_name: &str,
