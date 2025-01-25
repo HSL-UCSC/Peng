@@ -43,5 +43,8 @@ cyber_rc = { git = "https://github.com/friend0/CyberRC.git" }
 serialport = "4.6.0"
 tempfile = "3.14.0"
 prost = "0.13.3"
-vicon-sys = { git = "https://github.com/HSL-UCSC/vicon-rs.git", version = "0.2.0" }
+vicon-sys = { git = "https://github.com/HSL-UCSC/vicon-rs.git", branch = "lnx", optional = true }
 rerun = "0.21.0"
+
+[features]
+vicon = ["dep:vicon-sys"]
