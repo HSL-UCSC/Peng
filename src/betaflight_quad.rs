@@ -41,11 +41,20 @@ impl BetaflightQuad {
         config: config::Betaflight,
     ) -> Result<Self, SimulationError> {
         #[cfg(feature = "vicon")]
-        {
+        let consumer = if cfg!(feature = "vicon") {
             let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
             let producer_clone = producer.clone();
-        }
-        let config_clone = config.clone();
+            let config_clone = config.clone();
+            let subject_name = config.clone().subject_name;
+            tokio::spawn(async move {
+                let _ =
+                    feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
+            });
+            consumer
+        } else {
+            let (_, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
+            consumer
+        };
         // Open a serial port to communicate with the quadrotor if one is specified
         let writer: Option<Writer> = match config.clone().serial_port {
             Some(port) => {
@@ -72,11 +81,6 @@ impl BetaflightQuad {
                 None
             }
         };
-        let subject_name = config.clone().subject_name;
-        #[cfg(feature = "vicon")]
-        tokio::spawn(async move {
-            let _ = feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
-        });
         // Open a serial port to communicate with the quadrotor if one is specified
         Ok(Self {
             writer,
