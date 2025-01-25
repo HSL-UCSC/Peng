@@ -48,4 +48,4 @@ rerun = "0.21.0"
 
 [features]
 vicon = ["dep:vicon-sys"]
-default = ["vicon"]
+default = []
