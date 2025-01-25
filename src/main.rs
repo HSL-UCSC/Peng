@@ -1,14 +1,12 @@
 mod betaflight_quad;
 mod liftoff_quad;
+mod quadrotor_factory;
 
 use betaflight_quad::BetaflightQuad;
 use liftoff_quad::LiftoffQuad;
-use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
 use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::*;
-use std::f32::consts::PI;
-use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
