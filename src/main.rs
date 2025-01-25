@@ -1,4 +1,3 @@
-#![feature(thread_sleep_until)]
 mod betaflight_quad;
 mod liftoff_quad;
 
@@ -139,7 +138,7 @@ async fn main() -> Result<(), SimulationError> {
     log::info!("Starting simulation...");
     let mut i = 0;
     let frame_time = Duration::from_secs_f32(time_step);
-    let mut next_frame = Instant::now();
+    let mut next_frame = tokio::time::Instant::now();
     let mut quad_state = quad.observe(i)?;
     // Observe Loop Warmup
     let start_time = Instant::now();
@@ -152,7 +151,7 @@ async fn main() -> Result<(), SimulationError> {
     loop {
         // If real-time mode is enabled, sleep until the next frame simulation frame
         if config.real_time {
-            thread::sleep_until(next_frame);
+            tokio::time::sleep_until(next_frame);
             next_frame += frame_time;
         }
         let time = time_step * i as f32;
