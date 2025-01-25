@@ -89,6 +89,7 @@ async fn main() -> Result<(), SimulationError> {
     // log::info!("Use rerun.io: {}", config.use_rerun);
     if let Some(rec) = &rec {
         rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
+
         rec.set_time_seconds("timestamp", 0);
         log_maze_tube(rec, &maze)?;
         log_maze_obstacles(rec, &maze)?;
@@ -119,6 +120,11 @@ async fn main() -> Result<(), SimulationError> {
             )?),
             betaflight_config.quadrotor_config.mass,
         ),
+        _ => {
+            return Err(SimulationError::OtherError(
+                "Unsupported quadrotor type".to_string(),
+            ))
+        }
     };
 
     println!(
