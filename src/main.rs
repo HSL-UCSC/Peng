@@ -1,12 +1,17 @@
 mod betaflight_quad;
 mod liftoff_quad;
+mod logger;
 mod quadrotor_factory;
 
 use betaflight_quad::BetaflightQuad;
 use liftoff_quad::LiftoffQuad;
 use nalgebra::Vector3;
+use peng_quad::environment::Maze;
 use peng_quad::quadrotor::QuadrotorInterface;
+use peng_quad::sensors::Camera;
+use peng_quad::sensors::Imu;
 use peng_quad::*;
+use rerun::external::log;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -15,30 +20,26 @@ use std::time::Instant;
 async fn main() -> Result<(), SimulationError> {
     let mut config_str = "config/quad.yaml";
     let args: Vec<String> = std::env::args().collect();
+    let plog = logger::PrintLogger::new(logger::LogLevel::Debug);
+    info!(plog, "Starting Peng Quadrotor Simulation");
+    // env_logger::builder()
+    //     .target(env_logger::Target::Stdout)
+    //     .format_timestamp(None)
+    //     .init();
     if args.len() != 2 {
-        println!(
-            "[\x1b[33mWARN\x1b[0m peng_quad] Usage: {} <config.yaml>.",
-            args[0]
-        );
-        println!("[\x1b[33mWARN\x1b[0m peng_quad] Loading default configuration: config/quad.yaml");
+        log::warn!("Usage: {} <config.yaml>.", args[0]);
+        log::info!("Loading default configuration: config/quad.yaml");
     } else {
-        println!(
-            "[\x1b[32mINFO\x1b[0m peng_quad] Loading configuration: {}",
-            args[1]
-        );
+        log::info!("Loading configuration: {}", args[1]);
         config_str = &args[1];
     }
     let config = config::Config::from_yaml(config_str).expect("Failed to load configuration.");
-    println!(
-        "[\x1b[32mINFO\x1b[0m peng_quad]Use rerun.io: {}",
-        config.use_rerun
-    );
+    log::info!("Use rerun.io: {}", config.use_rerun);
+    log::info!("Using quadrotor: {:?}", config.quadrotor);
     let time_step = 1.0 / config.simulation.simulation_frequency as f32;
+
     // TODO: quadrotor factory
-    println!(
-        "[\x1b[32mINFO\x1b[0m peng_quad] Using quadrotor: {:?}",
-        config.quadrotor
-    );
+    log::info!("Using quadrotor: {:?}", config.quadrotor);
     let mut imu = Imu::new(
         config.imu.accel_noise_std,
         config.imu.gyro_noise_std,
@@ -71,12 +72,14 @@ async fn main() -> Result<(), SimulationError> {
         })
         .collect();
     let rec = if config.use_rerun {
+        // Set up Rerun
         let _rec = rerun::RecordingStreamBuilder::new("Peng").spawn()?;
+
         rerun::Logger::new(_rec.clone())
             .with_path_prefix("logs")
             .with_filter(rerun::default_log_filter())
             .init()
-            .unwrap();
+            .expect("error starting rerun");
         Some(_rec)
     } else {
         env_logger::builder()
@@ -125,10 +128,7 @@ async fn main() -> Result<(), SimulationError> {
         }
     };
 
-    println!(
-        "[\x1b[32mINFO\x1b[0m peng_quad] Quadrotor: {:?} {:?}",
-        mass, config.simulation.gravity
-    );
+    log::info!("Quadrotor: {:?} {:?}", mass, config.simulation.gravity);
     let _pos_gains = config.pid_controller.pos_gains;
     let _att_gains = config.pid_controller.att_gains;
     let mut controller = PIDController::new(
