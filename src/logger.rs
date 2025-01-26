@@ -1,3 +1,4 @@
+use colored::Colorize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,7 +9,6 @@ pub enum LogLevel {
     Warn,
     Info,
     Debug,
-    Trace,
 }
 
 pub struct PrintLogger {
@@ -32,18 +32,26 @@ impl PrintLogger {
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_secs();
-            println!("[{:?}] [{}] {}", level, timestamp, message);
+            let string = format!("[{:?}] [{}] {}", level, timestamp, message);
+            match level {
+                LogLevel::Error => println!("{}", string.red()),
+                LogLevel::Warn => println!("{}", string.yellow()),
+                LogLevel::Info => println!("{}", string.blue()),
+                LogLevel::Debug => println!("{}", string.cyan()),
+            };
         }
     }
 }
 
 // Macros for logging
+#[macro_export]
 macro_rules! error {
     ($logger:expr, $($arg:tt)*) => {
         $logger.log(logger::LogLevel::Error, &format!($($arg)*));
     };
 }
 
+#[macro_export]
 macro_rules! warn {
     ($logger:expr, $($arg:tt)*) => {
         $logger.log(logger::LogLevel::Warn, &format!($($arg)*));
@@ -61,12 +69,5 @@ macro_rules! info {
 macro_rules! debug {
     ($logger:expr, $($arg:tt)*) => {
         $logger.log(LogLevel::Debug, &format!($($arg)*));
-    };
-}
-
-#[macro_export]
-macro_rules! trace {
-    ($logger:expr, $($arg:tt)*) => {
-        $logger.log(LogLevel::Trace, &format!($($arg)*));
     };
 }
