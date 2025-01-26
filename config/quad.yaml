@@ -13,7 +13,6 @@ simulation:
   gravity: 9.81 # Gravitational acceleration (m/s^2)
   use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
   use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
-  gravity: 9.81 # Gravitational acceleration (m/s^2)
 
 quadrotor:
   type: "Peng"
