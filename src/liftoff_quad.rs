@@ -280,8 +280,9 @@ impl QuadrotorInterface for LiftoffQuad {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
 
-    fn vehicle_configuration(&self) -> peng_quad::config::QuadrotorConfig {
+    fn parameters(&self) -> peng_quad::config::QuadrotorConfig {
         peng_quad::config::QuadrotorConfig {
+            id: self.config.id.clone(),
             mass: self.config.mass,
             max_thrust_kg: self.config.max_thrust_kg,
             drag_coefficient: 0.0,
