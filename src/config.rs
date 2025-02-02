@@ -249,7 +249,7 @@ pub struct PIDGains {
     pub kd: [f32; 3],
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(Clone, serde::Deserialize, Default)]
 /// Configuration for the IMU
 pub struct ImuConfig {
     /// Accelerometer noise standard deviation
