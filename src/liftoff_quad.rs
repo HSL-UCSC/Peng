@@ -2,7 +2,7 @@ use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
 use nalgebra::{Matrix4, Quaternion, UnitQuaternion, Vector3};
 use peng_quad::config::{LiftoffQuadrotorConfig, SimulationConfig};
-use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
+use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState, State};
 use peng_quad::SimulationError;
 use tokio::sync::watch;
 use tokio::time::Duration;
@@ -181,7 +181,7 @@ impl QuadrotorInterface for LiftoffQuad {
 
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
-    fn observe(&mut self, step: usize) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, t: f32) -> Result<QuadrotorState, SimulationError> {
         // TODO: if there is not a new packet, return the old state
         if !self
             .consumer
@@ -216,14 +216,17 @@ impl QuadrotorInterface for LiftoffQuad {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs_f32(),
-                position: sample.position(),
-                velocity: Vector3::zeros(),
-                acceleration: Vector3::zeros(),
-                // Store the initial yaw as the initial attitude so that we can adjust for it on
-                // subsequent samples
-                orientation: get_initial_attitude(),
-                // orientation: UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
-                angular_velocity: Vector3::zeros(),
+                state: State {
+                    position: sample.position(),
+                    velocity: Vector3::zeros(),
+                    acceleration: Vector3::zeros(),
+                    // Store the initial yaw as the initial attitude so that we can adjust for it on
+                    // subsequent samples
+                    orientation: get_initial_attitude(),
+                    // orientation: UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
+                    angular_velocity: Vector3::zeros(),
+                },
+                ..Default::default()
             }
         });
 
@@ -252,14 +255,16 @@ impl QuadrotorInterface for LiftoffQuad {
         let alpha = 0.5;
         let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
         let acceleration_body = self.body_acceleration(attitude_quaternion, omega_body, v_body);
-        println!("Acceleration: {:?}", acceleration_body);
         self.state = QuadrotorState {
-            time: step as f32 * dt,
-            position: sample_position,
-            velocity: v_body,
-            acceleration: acceleration_body,
-            orientation: attitude_quaternion,
-            angular_velocity: omega_body,
+            time: t,
+            state: State {
+                position: sample_position,
+                velocity: v_body,
+                acceleration: acceleration_body,
+                orientation: attitude_quaternion,
+                angular_velocity: omega_body,
+            },
+            ..Default::default()
         };
         Ok(self.state.clone())
     }
