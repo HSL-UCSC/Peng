@@ -60,6 +60,7 @@ impl Obstacle {
 ///     rng: ChaCha8Rng::from_entropy(),
 /// };
 /// ```
+#[derive(Clone)]
 pub struct Maze {
     /// The lower bounds of the maze in the x, y, and z directions
     pub lower_bounds: [f32; 3],
