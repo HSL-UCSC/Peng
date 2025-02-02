@@ -14,6 +14,7 @@ pub fn build_quadrotor(
             Box::new(Quadrotor::new(
                 1.0 / config.simulation.simulation_frequency as f32,
                 config.simulation.clone(),
+                config.imu.clone(),
                 quad_config.mass,
                 config.simulation.gravity,
                 quad_config.drag_coefficient,
