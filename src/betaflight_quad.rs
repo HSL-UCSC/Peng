@@ -181,7 +181,7 @@ impl QuadrotorInterface for BetaflightQuad {
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
     #[cfg(feature = "vicon")]
-    fn observe(&mut self, step: usize) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, t: f32) -> Result<QuadrotorState, SimulationError> {
         if !self
             .consumer
             .has_changed()
@@ -207,7 +207,6 @@ impl QuadrotorInterface for BetaflightQuad {
         // Ideally, this will use the time steps or real time
         let dt = 1_f32 / 120_f32;
         let (position, rotation) = if sample.occluded() {
-            eprintln!("Extrapolate ---------");
             // Extrapolate the position
             let position = extrapolate_position(
                 self.previous_state.position,
@@ -249,17 +248,20 @@ impl QuadrotorInterface for BetaflightQuad {
         let acceleration_body = self.body_acceleration(self.previous_state.velocity, v_body, dt);
         self.state = QuadrotorState {
             time: dt,
-            position: position,
-            velocity: v_body,
-            acceleration: acceleration_body,
-            orientation: rotation,
-            angular_velocity: omega_body,
+            state: peng_quad::quadrotor::State {
+                position: position,
+                velocity: v_body,
+                acceleration: acceleration_body,
+                orientation: rotation,
+                angular_velocity: omega_body,
+            },
+            ..Default::default()
         };
         Ok(self.state.clone())
     }
 
     #[cfg(not(feature = "vicon"))]
-    fn observe(&mut self, step: usize) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, t: f32) -> Result<QuadrotorState, SimulationError> {
         Ok(QuadrotorState::default())
     }
 
