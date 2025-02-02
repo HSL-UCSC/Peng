@@ -94,10 +94,12 @@ pub enum QuadrotorConfigurations {
     Betaflight(Betaflight),
 }
 
-#[derive(Copy, Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
+    /// Mass of the quadrotor in kg
+    pub id: String,
     /// Mass of the quadrotor in kg
     pub mass: f32,
     /// Drag coefficient in Ns^2/m^2
@@ -115,6 +117,7 @@ pub struct QuadrotorConfig {
 impl Default for QuadrotorConfig {
     fn default() -> Self {
         QuadrotorConfig {
+            id: "quadrotor".to_string(),
             mass: 1.3,
             drag_coefficient: 0.000,
             inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
@@ -143,6 +146,8 @@ impl QuadrotorConfig {
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct LiftoffQuadrotorConfig {
+    /// ID or name of quadrotor
+    pub id: String,
     /// Mass of the quadrotor in kg
     pub mass: f32,
     /// Gravity in m/s^2
@@ -166,6 +171,7 @@ pub struct LiftoffQuadrotorConfig {
 impl Default for LiftoffQuadrotorConfig {
     fn default() -> Self {
         LiftoffQuadrotorConfig {
+            id: "LiftoffQuad".to_string(),
             mass: 1.3,
             gravity: 9.81,
             inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
@@ -185,10 +191,10 @@ impl Default for LiftoffQuadrotorConfig {
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct Betaflight {
+    pub id: String,
     pub quadrotor_config: QuadrotorConfig,
     /// The IP address where Liftoff is publishing state data
     pub vicon_address: String,
-    pub subject_name: String,
     pub connection_timeout: tokio::time::Duration,
     pub max_retry_delay: tokio::time::Duration,
     pub serial_port: Option<String>,
@@ -200,7 +206,7 @@ impl Default for Betaflight {
         Betaflight {
             quadrotor_config: QuadrotorConfig::default(),
             vicon_address: String::from("0.0.0.0:51001"),
-            subject_name: String::new(),
+            id: String::new(),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
             serial_port: None,
