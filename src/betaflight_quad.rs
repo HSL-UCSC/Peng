@@ -45,7 +45,7 @@ impl BetaflightQuad {
             let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
             let producer_clone = producer.clone();
             let config_clone = config.clone();
-            let subject_name = config.clone().subject_name;
+            let subject_name = config.clone().id;
             tokio::spawn(async move {
                 let _ =
                     feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
@@ -279,8 +279,9 @@ impl QuadrotorInterface for BetaflightQuad {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
 
-    fn vehicle_configuration(&self) -> peng_quad::config::QuadrotorConfig {
+    fn parameters(&self) -> peng_quad::config::QuadrotorConfig {
         peng_quad::config::QuadrotorConfig {
+            id: self.config.id.clone(),
             mass: self.config.quadrotor_config.mass,
             max_thrust_kg: self.config.quadrotor_config.max_thrust_kg,
             drag_coefficient: 0.0,
@@ -363,7 +364,7 @@ impl ViconPacket {
 #[cfg(feature = "vicon")]
 async fn feedback_loop(
     address: &str,
-    subject_name: &str,
+    id: &str,
     tx: watch::Sender<Option<vicon_sys::ViconSubject>>,
 ) -> Result<(), SimulationError> {
     let mut vicon = vicon_sys::sys::ViconSystem::new("localhost")
@@ -373,7 +374,7 @@ async fn feedback_loop(
         if let Ok(subjects) = vicon.read_frame_subjects(vicon_sys::OutputRotation::Quaternion) {
             // TODO: add search for all subjects
             if let Some(sample) = subjects.first() {
-                if sample.name == subject_name {
+                if sample.name == id {
                     tx.send(Some(sample.clone()))
                         .map_err(|e| SimulationError::OtherError(e.to_string()))?;
                 }
