@@ -151,8 +151,6 @@ impl<'a> RerunLogger<'a> {
         // mut trajectory: Trajectory,
         desired_position: Vector3<f32>,
         desired_velocity: Vector3<f32>,
-        measured_gyro: Vector3<f32>,
-        measured_accel: Vector3<f32>,
         // control outputs
         thrust: f32,
         torque: Vector3<f32>,
@@ -197,8 +195,8 @@ impl<'a> RerunLogger<'a> {
             &desired_position,
             &Vector3::new(euler_d.0, euler_d.1, euler_d.2),
             &desired_velocity,
-            &measured_accel,
-            &quad_state.angular_velocity,
+            &quad_state.measured_state.acceleration,
+            &quad_state.measured_state.angular_velocity,
             &torque,
         )?;
         log_control(rec, thrust, torque, Some((thrust_out, torque_out)))?;
