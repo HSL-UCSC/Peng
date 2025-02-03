@@ -36,12 +36,6 @@ async fn main() -> Result<(), SimulationError> {
 
     info!(plog, "Using quadrotor: {:?}", config.quadrotor);
     let (mut quad, mass) = quadrotor_factory::build_quadrotor(&config)?;
-    let mut imu = Imu::new(
-        config.imu.accel_noise_std,
-        config.imu.gyro_noise_std,
-        config.imu.accel_bias_std,
-        config.imu.gyro_bias_std,
-    )?;
     let mut maze = Maze::new(
         config.maze.lower_bounds,
         config.maze.upper_bounds,
@@ -49,7 +43,7 @@ async fn main() -> Result<(), SimulationError> {
         config.maze.obstacles_velocity_bounds,
         config.maze.obstacles_radius_bounds,
     );
-    // TODO lets not do multiple cameras, but we need to determine how to asssociate the camera
+    // TODO: lets not do multiple cameras, but we need to determine how to asssociate the camera
     // with the ego vehicle
     let mut camera = Camera::new(
         config.camera.resolution,
@@ -98,12 +92,12 @@ async fn main() -> Result<(), SimulationError> {
     let time_step = 1.0 / config.simulation.simulation_frequency as f32;
     let frame_time = Duration::from_secs_f32(time_step);
     let mut next_frame = tokio::time::Instant::now();
-    let mut quad_state = quad.observe(i)?;
+    let mut quad_state = quad.observe(time_step)?;
     // Observe Loop Warmup
     let start_time = Instant::now();
     loop {
         if start_time.elapsed() >= Duration::new(5, 0) {
-            let _ = quad.observe(i);
+            let _ = quad.observe(time_step);
             break; // Exit the loop after 3 seconds
         }
     }
@@ -146,21 +140,14 @@ async fn main() -> Result<(), SimulationError> {
             &quad_state.angular_velocity,
             time_step,
         );
-        // println!("Desired Position: {:?}", desired_position);
-        // println!("Desired Orientation: {:?}", calculated_desired_orientation);
         let first_planner = planner_config.first().unwrap();
         let mut control_out: Option<(f32, Vector3<f32>)> = None;
-        // if i >= first_planner.step {
         // TODO: cleanup the return type of the control method
         let (thrust_out, torque_out) = match quad.control(i, thrust, &torque)? {
             Some(values) => values,
             None => (0_f32, Vector3::<f32>::zeros()),
         };
-        // }
-        quad_state = quad.observe(i)?;
-        imu.update(time_step)?;
-        let (true_accel, true_gyro) = quad.read_imu()?;
-        let (measured_accel, measured_gyro) = imu.read(true_accel, true_gyro)?;
+        quad_state = quad.observe(time_step)?;
         if i % (config.simulation.simulation_frequency / config.simulation.log_frequency) == 0 {
             if let Some(logger) = rerun_logger_handle.as_mut() {
                 logger.log(
@@ -171,8 +158,6 @@ async fn main() -> Result<(), SimulationError> {
                     // trajectory.clone(),
                     desired_position,
                     desired_velocity,
-                    measured_gyro,
-                    measured_accel,
                     thrust,
                     torque,
                     desired_orientation,
