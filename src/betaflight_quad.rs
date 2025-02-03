@@ -1,12 +1,9 @@
-use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
-use nalgebra::{AbstractRotation, Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
+use nalgebra::{AbstractRotation, UnitQuaternion, Vector3};
 use peng_quad::config;
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
-use std::f32::consts::PI;
 use std::time::Duration;
-use tokio::sync::watch;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
 
@@ -322,7 +319,7 @@ fn extrapolate_orientation(
     let rotation_angle = omega_magnitude * dt;
 
     // Create the delta rotation as a unit quaternion
-    let delta_quaternion = UnitQuaternion::from_axis_angle(&rotation_axis.into(), rotation_angle);
+    let delta_quaternion = UnitQuaternion::from_axis_angle(&rotation_axis, rotation_angle);
 
     // Apply the delta quaternion to the previous orientation
     last_orientation * delta_quaternion

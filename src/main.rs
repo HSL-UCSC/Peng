@@ -3,16 +3,12 @@ mod liftoff_quad;
 mod logger;
 mod quadrotor_factory;
 
-use betaflight_quad::BetaflightQuad;
-use liftoff_quad::LiftoffQuad;
 use nalgebra::Vector3;
 use peng_quad::environment::Maze;
 use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::sensors::Camera;
-use peng_quad::sensors::Imu;
 use peng_quad::*;
 use rerun::external::log;
-use rerun::RecordingStream;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -141,7 +137,7 @@ async fn main() -> Result<(), SimulationError> {
             time_step,
         );
         let first_planner = planner_config.first().unwrap();
-        let mut control_out: Option<(f32, Vector3<f32>)> = None;
+        let control_out: Option<(f32, Vector3<f32>)> = None;
         // TODO: cleanup the return type of the control method
         let (thrust_out, torque_out) = match quad.control(i, thrust, &torque)? {
             Some(values) => values,

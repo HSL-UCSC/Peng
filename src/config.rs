@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn test_base_config() {
         let config = Config::from_yaml("tests/testdata/test_config_base.yaml").unwrap();
-        let mut quadrotor_config: QuadrotorConfig = match config.quadrotor {
+        let quadrotor_config: QuadrotorConfig = match config.quadrotor {
             QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config,
             _ => panic!("Failed to load Peng configuration"),
         };
