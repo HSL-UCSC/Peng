@@ -17,7 +17,7 @@
       {
         defaultPackage = naersk-lib.buildPackage ./.;
         devShell = with pkgs; mkShell {
-          buildInputs = [ cargo rustc rustfmt pre-commit rustPackages.clippy rerun protobuf];
+          buildInputs = [ cargo clippy rustc rustfmt pre-commit rustPackages.clippy rerun protobuf];
           RUST_SRC_PATH = rustPlatform.rustLibSrc;
 
           shellHook = ''

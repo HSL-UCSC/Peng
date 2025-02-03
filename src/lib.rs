@@ -44,8 +44,6 @@
 //! let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 //! ```
 use quadrotor::State;
-use rand::SeedableRng;
-use rayon::prelude::*;
 pub mod config;
 pub mod environment;
 pub mod logger;
@@ -56,9 +54,6 @@ use environment::Maze;
 use environment::Obstacle;
 use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
 use quadrotor::{QuadrotorInterface, QuadrotorState};
-use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, Normal};
-use sensors::Camera;
 use sensors::Imu;
 use std::f32::consts::PI;
 
@@ -268,7 +263,7 @@ impl Quadrotor {
                     "Failed to invert inertia matrix".to_string(),
                 ))?;
 
-        let mut imu = Imu::new(
+        let imu = Imu::new(
             imu_config.accel_noise_std,
             imu_config.gyro_noise_std,
             imu_config.accel_bias_std,

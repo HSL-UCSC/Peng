@@ -155,14 +155,17 @@ async fn main() -> Result<(), SimulationError> {
                     quad_state.clone(),
                     maze.clone(),
                     &mut camera,
-                    // trajectory.clone(),
-                    desired_position,
-                    desired_velocity,
-                    thrust,
-                    torque,
-                    desired_orientation,
-                    thrust_out,
-                    torque_out,
+                    logger::DesiredState {
+                        position: desired_position,
+                        velocity: desired_velocity,
+                        orientation: desired_orientation,
+                    },
+                    logger::ControlOutput {
+                        torque,
+                        thrust,
+                        thrust_out,
+                        torque_out,
+                    },
                 )?;
             }
         }
