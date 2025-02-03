@@ -17,7 +17,7 @@
       {
         defaultPackage = naersk-lib.buildPackage ./.;
         devShell = with pkgs; mkShell {
-          buildInputs = [ cargo rustc rustfmt pre-commit rustPackages.clippy rerun];
+          buildInputs = [ cargo rustc rustfmt pre-commit rustPackages.clippy rerun protobuf];
           RUST_SRC_PATH = rustPlatform.rustLibSrc;
 
           shellHook = ''
@@ -27,7 +27,6 @@
             export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"  # Ensure it uses your SSH config
             # Start Zsh if not already the active shell
             echo "Entering Rust development environment..."
-            rustup install stable
             cargo fetch # Pre-fetch dependencies defined in Cargo.toml
             if [ "$SHELL" != "$(command -v zsh)" ]; then
               export PATH="$HOME/.cargo/bin:$PATH"
