@@ -1,6 +1,6 @@
 use crate::SimulationError;
 use nalgebra::{UnitQuaternion, Vector3};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug, Default)]
 pub struct State {
@@ -34,6 +34,13 @@ impl Deref for QuadrotorState {
 
     fn deref(&self) -> &Self::Target {
         &self.state
+    }
+}
+
+// Implement Deref so QuadrotorState behaves like State
+impl DerefMut for QuadrotorState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
     }
 }
 
