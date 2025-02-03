@@ -1,8 +1,8 @@
-use crate::config::{self, QuadrotorConfigurations};
+use crate::config::{self};
 use crate::environment::Maze;
-use crate::quadrotor::{QuadrotorInterface, QuadrotorState};
+use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
-use crate::{Quadrotor, SimulationError, Trajectory};
+use crate::{SimulationError, Trajectory};
 use colored::Colorize;
 use nalgebra::{Matrix3, Rotation3, UnitQuaternion, Vector3};
 use rayon::prelude::*;
@@ -80,14 +80,26 @@ macro_rules! debug {
     };
 }
 
-pub struct LogMessage {}
+pub struct DesiredState {
+    pub position: Vector3<f32>,
+    pub velocity: Vector3<f32>,
+    pub orientation: UnitQuaternion<f32>,
+}
+
+pub struct ControlOutput {
+    pub thrust: f32,
+    pub torque: Vector3<f32>,
+    // applied control outputs
+    pub thrust_out: f32,
+    pub torque_out: Vector3<f32>,
+}
 
 #[derive(Clone)]
 pub struct RerunLogger<'a> {
     pub tx: tokio::sync::mpsc::Sender<String>,
     rec: Arc<RecordingStream>,
     config: &'a config::Config,
-    maze: &'a Maze,
+    _maze: &'a Maze,
     trajectory_map: std::collections::HashMap<String, Trajectory>,
 }
 
@@ -107,8 +119,8 @@ impl<'a> RerunLogger<'a> {
             .expect("error starting rerun");
         rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
         rec.set_time_seconds("timestamp", 0);
-        log_maze_tube(&rec, &maze)?;
-        log_maze_obstacles(&rec, &maze)?;
+        log_maze_tube(&rec, maze)?;
+        log_maze_obstacles(&rec, maze)?;
         let mut trajectory_map = std::collections::HashMap::<String, Trajectory>::new();
         quadrotors.iter().for_each(|quad| {
             // let id = match quad {
@@ -137,7 +149,7 @@ impl<'a> RerunLogger<'a> {
             // rx,
             config,
             rec: Arc::new(rec),
-            maze,
+            _maze: maze,
             trajectory_map,
         })
     }
@@ -149,15 +161,8 @@ impl<'a> RerunLogger<'a> {
         maze: Maze,
         camera: &mut Camera,
         // mut trajectory: Trajectory,
-        desired_position: Vector3<f32>,
-        desired_velocity: Vector3<f32>,
-        // control outputs
-        thrust: f32,
-        torque: Vector3<f32>,
-        desired_orientation: UnitQuaternion<f32>,
-        // applied control outputs
-        thrust_out: f32,
-        torque_out: Vector3<f32>,
+        desired_state: DesiredState,
+        control_out: ControlOutput,
     ) -> Result<(), SimulationError> {
         let rec = &self.rec;
         rec.set_time_seconds("timestamp", time);
@@ -180,31 +185,31 @@ impl<'a> RerunLogger<'a> {
             }
         };
         // let mut trajectory = self.trajectory_map.get("").as_ref();
-        match self.trajectory_map.get_mut(&"PengQuad".to_string()) {
-            Some(trajectory) => {
-                trajectory.add_point(quad_state.position);
-                log_trajectory(rec, trajectory)?;
-            }
-            None => (),
+        if let Some(trajectory) = self.trajectory_map.get_mut("PengQuad") {
+            trajectory.add_point(quad_state.position);
+            log_trajectory(rec, trajectory)?;
         }
 
-        let euler_d = desired_orientation.euler_angles();
+        let euler_d = desired_state.orientation.euler_angles();
         log_data(
             rec,
             &rerun_quad_state,
-            &desired_position,
+            &desired_state.position,
             &Vector3::new(euler_d.0, euler_d.1, euler_d.2),
-            &desired_velocity,
-            &quad_state.measured_state.acceleration,
-            &quad_state.measured_state.angular_velocity,
-            &torque,
+            &desired_state.velocity,
+            &control_out.torque,
         )?;
-        log_control(rec, thrust, torque, Some((thrust_out, torque_out)))?;
+        log_control(
+            rec,
+            control_out.thrust,
+            control_out.torque,
+            Some((control_out.thrust_out, control_out.torque_out)),
+        )?;
         if self.config.render_depth {
-            log_depth_image(rec, &camera, self.config.use_multithreading_depth_rendering)?;
+            log_depth_image(rec, camera, self.config.use_multithreading_depth_rendering)?;
             log_pinhole_depth(
                 rec,
-                &camera,
+                camera,
                 rerun_quad_state.position,
                 rerun_quad_state.orientation,
                 self.config.camera.rotation_transform,
@@ -255,8 +260,6 @@ pub fn log_data(
     desired_position: &Vector3<f32>,
     desired_orientation: &Vector3<f32>,
     desired_velocity: &Vector3<f32>,
-    measured_accel: &Vector3<f32>,
-    measured_gyro: &Vector3<f32>,
     torque: &Vector3<f32>,
 ) -> Result<(), SimulationError> {
     rec.log(
@@ -287,10 +290,10 @@ pub fn log_data(
     for (pre, vec) in [
         ("position", &quad_state.position),
         ("velocity", &quad_state.velocity),
-        ("accel", measured_accel),
+        ("accel", &quad_state.measured_state.acceleration),
         ("orientation", &quad_euler_angles),
-        ("desired_orientation", &desired_orientation),
-        ("gyro", measured_gyro),
+        ("desired_orientation", desired_orientation),
+        ("gyro", &quad_state.measured_state.angular_velocity),
         ("desired_position", desired_position),
         ("desired_velocity", desired_velocity),
         ("torque", torque),
