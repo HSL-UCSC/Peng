@@ -1,10 +1,10 @@
+use crate::config::{self, QuadrotorConfigurations};
+use crate::environment::Maze;
+use crate::quadrotor::{QuadrotorInterface, QuadrotorState};
+use crate::sensors::Camera;
+use crate::{Quadrotor, SimulationError, Trajectory};
 use colored::Colorize;
 use nalgebra::{Matrix3, Rotation3, UnitQuaternion, Vector3};
-use peng_quad::config::{self, QuadrotorConfigurations};
-use peng_quad::environment::Maze;
-use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
-use peng_quad::sensors::Camera;
-use peng_quad::{Quadrotor, SimulationError, Trajectory};
 use rayon::prelude::*;
 use rerun::RecordingStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -233,13 +233,14 @@ impl<'a> RerunLogger<'a> {
 /// # Example
 /// ```no_run
 /// use peng_quad::config;;
-/// use peng_quad::{Quadrotor, log_data, quadrotor::QuadrotorInterface};
+/// use peng_quad::{Quadrotor, quadrotor::QuadrotorInterface};
+/// use peng_quad::logger::log_data;
 /// use nalgebra::Vector3;
 /// let rec = rerun::RecordingStreamBuilder::new("peng").connect().unwrap();
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-/// let quad_state = quadrotor.observe(0).unwrap();
+/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let quad_state = quadrotor.observe(0.0).unwrap();
 /// let desired_position = Vector3::new(0.0, 0.0, 0.0);
 /// let desired_orientation = Vector3::new(0.0, 0.0, 0.0);
 /// let desired_velocity = Vector3::new(0.0, 0.0, 0.0);
@@ -334,7 +335,8 @@ pub fn log_control(
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{Maze, log_maze_tube};
+/// use peng_quad::environment::Maze;
+/// use peng_quad::logger::log_maze_tube;
 /// use rerun::RecordingStreamBuilder;
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
 /// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
@@ -367,7 +369,8 @@ pub fn log_maze_tube(rec: &rerun::RecordingStream, maze: &Maze) -> Result<(), Si
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{Maze, log_maze_obstacles};
+/// use peng_quad::environment::Maze;
+/// use peng_quad::logger::log_maze_obstacles;
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
 /// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
 /// log_maze_obstacles(&rec, &maze).unwrap();
@@ -404,7 +407,8 @@ pub fn log_maze_obstacles(
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{log_pinhole_depth, Camera};
+/// use peng_quad::sensors::Camera;
+/// use peng_quad::logger::log_pinhole_depth;
 /// use nalgebra::{Vector3, UnitQuaternion};
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
 /// let depth_image = vec![ 0.0f32 ; 640 * 480];
@@ -466,7 +470,8 @@ pub fn log_pinhole_depth(
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{Trajectory, log_trajectory};
+/// use peng_quad::{Trajectory};
+/// use peng_quad::logger::log_trajectory;
 /// use nalgebra::Vector3;
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
 /// let mut trajectory = Trajectory::new(nalgebra::Vector3::new(0.0, 0.0, 0.0));
@@ -501,7 +506,8 @@ pub fn log_trajectory(
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{log_depth_image, Camera};
+/// use peng_quad::sensors::Camera;
+/// use peng_quad::logger::log_depth_image;
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
 /// let camera = Camera::new((640, 480), 0.1, 100.0, 60.0);
 /// let use_multi_threading = false;
@@ -573,7 +579,7 @@ pub fn log_depth_image(
 /// * The RGB color value in the range [0, 255]
 /// # Example
 /// ```
-/// use peng_quad::color_map_fn;
+/// use peng_quad::logger::color_map_fn;
 /// let color = color_map_fn(128.0);
 /// ```
 #[inline]
