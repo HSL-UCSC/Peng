@@ -5,7 +5,6 @@ mod quadrotor_factory;
 
 use nalgebra::Vector3;
 use peng_quad::environment::Maze;
-use peng_quad::quadrotor::QuadrotorInterface;
 use peng_quad::sensors::Camera;
 use peng_quad::*;
 use rerun::external::log;
@@ -136,8 +135,6 @@ async fn main() -> Result<(), SimulationError> {
             &quad_state.angular_velocity,
             time_step,
         );
-        let first_planner = planner_config.first().unwrap();
-        let control_out: Option<(f32, Vector3<f32>)> = None;
         // TODO: cleanup the return type of the control method
         let (thrust_out, torque_out) = match quad.control(i, thrust, &torque)? {
             Some(values) => values,
