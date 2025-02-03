@@ -6,7 +6,7 @@ use rand_chacha::ChaCha8Rng;
 /// Represents an obstacle in the simulation
 /// # Example
 /// ```
-/// use peng_quad::Obstacle;
+/// use peng_quad::environment::Obstacle;
 /// use nalgebra::Vector3;
 /// let obstacle = Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
 /// ```
@@ -31,7 +31,7 @@ impl Obstacle {
     /// * The new obstacle instance
     /// # Example
     /// ```
-    /// use peng_quad::Obstacle;
+    /// use peng_quad::environment::Obstacle;
     /// use nalgebra::Vector3;
     /// let obstacle = Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
     /// ```
@@ -47,7 +47,7 @@ impl Obstacle {
 /// Represents a maze in the simulation
 /// # Example
 /// ```
-/// use peng_quad::{Maze, Obstacle};
+/// use peng_quad::environment::{Maze, Obstacle};
 /// use rand_chacha::ChaCha8Rng;
 /// use rand::SeedableRng;
 /// use nalgebra::Vector3;
@@ -86,7 +86,7 @@ impl Maze {
     /// * The new maze instance
     /// # Example
     /// ```
-    /// use peng_quad::Maze;
+    /// use peng_quad::environment::Maze;
     /// let maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
     /// ```
     pub fn new(
@@ -112,7 +112,7 @@ impl Maze {
     /// * `num_obstacles` - The number of obstacles to generate
     /// # Example
     /// ```
-    /// use peng_quad::Maze;
+    /// use peng_quad::environment::Maze;
     /// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
     /// maze.generate_obstacles(5);
     /// ```
@@ -141,7 +141,7 @@ impl Maze {
     /// * `dt` - The time step
     /// # Example
     /// ```
-    /// use peng_quad::Maze;
+    /// use peng_quad::environment::Maze;
     /// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
     /// maze.update_obstacles(0.1);
     /// ```

@@ -13,7 +13,7 @@ use crate::{ray_cast, SimulationError};
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::Imu;
+/// use peng_quad::sensors::Imu;
 /// let accel_noise_std = 0.0003;
 /// let gyro_noise_std = 0.02;
 /// let accel_bias_std = 0.0001;
@@ -56,7 +56,7 @@ impl Imu {
     /// * A new Imu instance
     /// # Example
     /// ```
-    /// use peng_quad::Imu;
+    /// use peng_quad::sensors::Imu;
     ///
     /// let imu = Imu::new(0.01, 0.01, 0.01, 0.01);
     /// ```
@@ -87,7 +87,7 @@ impl Imu {
     /// * Returns a SimulationError if the bias drift cannot be calculated
     /// # Example
     /// ```
-    /// use peng_quad::Imu;
+    /// use peng_quad::sensors::Imu;
     ///
     /// let mut imu = Imu::new(0.01, 0.01, 0.01, 0.01).unwrap();
     /// imu.update(0.01).unwrap();
@@ -113,7 +113,7 @@ impl Imu {
     /// # Example
     /// ```
     /// use nalgebra::Vector3;
-    /// use peng_quad::Imu;
+    /// use peng_quad::sensors::Imu;
     ///
     /// let mut imu = Imu::new(0.01, 0.01, 0.01, 0.01).unwrap();
     /// let true_acceleration = Vector3::new(0.0, 0.0, 9.81);
@@ -138,7 +138,7 @@ impl Imu {
 /// Represents a camera in the simulation which is used to render the depth of the scene
 /// # Example
 /// ```
-/// use peng_quad::Camera;
+/// use peng_quad::sensors::Camera;
 /// let camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
 /// ```
 pub struct Camera {
@@ -175,7 +175,7 @@ impl Camera {
     /// * The new camera instance
     /// # Example
     /// ```
-    /// use peng_quad::Camera;
+    /// use peng_quad::sensors::Camera;
     /// let camera = Camera::new((800, 600), 1.0, 5.0, 120.0);
     /// ```
     pub fn new(resolution: (usize, usize), fov_vertical: f32, near: f32, far: f32) -> Self {
@@ -223,7 +223,8 @@ impl Camera {
     /// * If the depth buffer is not large enough to store the depth values
     /// # Example
     /// ```
-    /// use peng_quad::{Camera, Maze};
+    /// use peng_quad::sensors::Camera;
+    /// use peng_quad::environment::Maze;
     /// use nalgebra::{Vector3, UnitQuaternion};
     /// let mut camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
     /// let quad_position = Vector3::new(0.0, 0.0, 0.0);
