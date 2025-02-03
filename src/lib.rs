@@ -43,6 +43,7 @@
 //! let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
 //! let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 //! ```
+use quadrotor::State;
 use rand::SeedableRng;
 use rayon::prelude::*;
 pub mod config;
@@ -57,6 +58,7 @@ use quadrotor::{QuadrotorInterface, QuadrotorState};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use sensors::Camera;
+use sensors::Imu;
 use std::f32::consts::PI;
 
 #[derive(thiserror::Error, Debug)]
@@ -97,6 +99,7 @@ pub enum SimulationError {
 pub struct Quadrotor {
     /// The name or ID of the quadrotor
     pub name: String,
+    // TODO: move all of these to an instance of quadrotor state
     /// Current position of the quadrotor in 3D space
     pub position: Vector3<f32>,
     /// Current velocity of the quadrotor
@@ -125,6 +128,8 @@ pub struct Quadrotor {
     pub previous_torque: Vector3<f32>,
     /// Config
     pub config: config::SimulationConfig,
+    /// IMU
+    pub imu: Imu,
 }
 
 impl QuadrotorInterface for Quadrotor {
@@ -154,14 +159,24 @@ impl QuadrotorInterface for Quadrotor {
         Ok(None)
     }
 
-    fn observe(&mut self, _step_number: usize) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, t: f32) -> Result<QuadrotorState, SimulationError> {
+        let (measured_acceleration, measured_angular_velocity) =
+            self.imu.read(self.acceleration, self.angular_velocity)?;
+        self.imu.update(t)?;
         Ok(QuadrotorState {
             time: 0.0,
-            position: self.position,
-            velocity: self.velocity,
-            acceleration: self.acceleration,
-            orientation: self.orientation,
-            angular_velocity: self.angular_velocity,
+            state: State {
+                position: self.position,
+                velocity: self.velocity,
+                acceleration: self.acceleration,
+                orientation: self.orientation,
+                angular_velocity: self.angular_velocity,
+            },
+            measured_state: State {
+                acceleration: measured_acceleration,
+                angular_velocity: measured_angular_velocity,
+                ..Default::default()
+            },
         })
     }
 
@@ -238,6 +253,7 @@ impl Quadrotor {
     pub fn new(
         time_step: f32,
         config: config::SimulationConfig,
+        imu_config: config::ImuConfig,
         mass: f32,
         gravity: f32,
         drag_coefficient: f32,
@@ -250,6 +266,13 @@ impl Quadrotor {
                 .ok_or(SimulationError::NalgebraError(
                     "Failed to invert inertia matrix".to_string(),
                 ))?;
+
+        let mut imu = Imu::new(
+            imu_config.accel_noise_std,
+            imu_config.gyro_noise_std,
+            imu_config.accel_bias_std,
+            imu_config.gyro_bias_std,
+        )?;
         Ok(Self {
             name: "PengQuad".to_string(),
             config,
@@ -266,6 +289,7 @@ impl Quadrotor {
             inertia_matrix_inv,
             previous_thrust: 0.0,
             previous_torque: Vector3::zeros(),
+            imu,
         })
     }
 
