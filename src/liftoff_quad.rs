@@ -233,9 +233,8 @@ impl QuadrotorInterface for LiftoffQuad {
         // Adjust the sample by the initial state
         // Adjust for the initial yaw - we take the starting yaw of the vehicle to be 0
         let initial_quaternion = initial_state.orientation;
-        let attitude_quaternion = initial_quaternion.conjugate()
-            * sample.attitude_quaternion()
-            * initial_quaternion;
+        let attitude_quaternion =
+            initial_quaternion.conjugate() * sample.attitude_quaternion() * initial_quaternion;
         // let attitude_quaternion = sample.attitude_quaternion();
         // Asjut fot the initial position - we take the starting location of the vehicle to be the
         // origin
