@@ -41,16 +41,20 @@
 //! use peng_quad::{Quadrotor, SimulationError};
 //! let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 //! let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-//! let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+//! let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 //! ```
-use rand::SeedableRng;
-use rayon::prelude::*;
+use quadrotor::State;
 pub mod config;
+pub mod environment;
+pub mod logger;
 pub mod quadrotor;
+pub mod sensors;
+
+use environment::Maze;
+use environment::Obstacle;
 use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
 use quadrotor::{QuadrotorInterface, QuadrotorState};
-use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, Normal};
+use sensors::Imu;
 use std::f32::consts::PI;
 
 #[derive(thiserror::Error, Debug)]
@@ -86,9 +90,12 @@ pub enum SimulationError {
 /// use peng_quad::Quadrotor;
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 /// ```
 pub struct Quadrotor {
+    /// The name or ID of the quadrotor
+    pub name: String,
+    // TODO: move all of these to an instance of quadrotor state
     /// Current position of the quadrotor in 3D space
     pub position: Vector3<f32>,
     /// Current velocity of the quadrotor
@@ -117,6 +124,8 @@ pub struct Quadrotor {
     pub previous_torque: Vector3<f32>,
     /// Config
     pub config: config::SimulationConfig,
+    /// IMU
+    pub imu: Imu,
 }
 
 impl QuadrotorInterface for Quadrotor {
@@ -125,7 +134,7 @@ impl QuadrotorInterface for Quadrotor {
         step_number: usize,
         thrust: f32,
         torque: &Vector3<f32>,
-    ) -> Result<(), SimulationError> {
+    ) -> Result<Option<(f32, Vector3<f32>)>, SimulationError> {
         if step_number % (self.config.simulation_frequency / self.config.control_frequency) == 0 {
             if self.config.use_rk4_for_dynamics_control {
                 self.update_dynamics_with_controls_rk4(thrust, torque);
@@ -143,17 +152,27 @@ impl QuadrotorInterface for Quadrotor {
                 self.update_dynamics_with_controls_euler(previous_thrust, &previous_torque);
             }
         }
-        Ok(())
+        Ok(None)
     }
 
-    fn observe(&mut self) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, t: f32) -> Result<QuadrotorState, SimulationError> {
+        let (measured_acceleration, measured_angular_velocity) =
+            self.imu.read(self.acceleration, self.angular_velocity)?;
+        self.imu.update(t)?;
         Ok(QuadrotorState {
             time: 0.0,
-            position: self.position,
-            velocity: self.velocity,
-            acceleration: self.acceleration,
-            orientation: self.orientation,
-            angular_velocity: self.angular_velocity,
+            state: State {
+                position: self.position,
+                velocity: self.velocity,
+                acceleration: self.acceleration,
+                orientation: self.orientation,
+                angular_velocity: self.angular_velocity,
+            },
+            measured_state: State {
+                acceleration: measured_acceleration,
+                angular_velocity: measured_angular_velocity,
+                ..Default::default()
+            },
         })
     }
 
@@ -183,11 +202,23 @@ impl QuadrotorInterface for Quadrotor {
     ///
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let (true_acceleration, true_angular_velocity) = quadrotor.read_imu().unwrap();
     /// ```
     fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
         Ok((self.acceleration, self.angular_velocity))
+    }
+
+    fn parameters(&self) -> config::QuadrotorConfig {
+        config::QuadrotorConfig {
+            id: self.name.clone(),
+            mass: self.mass,
+            drag_coefficient: self.drag_coefficient,
+            inertia_matrix: self.inertia_matrix.as_slice().try_into().unwrap(),
+            max_thrust_kg: self.max_thrust(),
+            arm_length_m: 0.0,
+            yaw_torque_constant: 0.0,
+        }
     }
 }
 
@@ -212,12 +243,13 @@ impl Quadrotor {
     ///
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// ```
     /// TODO: time step to simulation config, others to quadrotor config
     pub fn new(
         time_step: f32,
         config: config::SimulationConfig,
+        imu_config: config::ImuConfig,
         mass: f32,
         gravity: f32,
         drag_coefficient: f32,
@@ -230,7 +262,15 @@ impl Quadrotor {
                 .ok_or(SimulationError::NalgebraError(
                     "Failed to invert inertia matrix".to_string(),
                 ))?;
+
+        let imu = Imu::new(
+            imu_config.accel_noise_std,
+            imu_config.gyro_noise_std,
+            imu_config.accel_bias_std,
+            imu_config.gyro_bias_std,
+        )?;
         Ok(Self {
+            name: "PengQuad".to_string(),
             config,
             position: Vector3::zeros(),
             velocity: Vector3::zeros(),
@@ -245,6 +285,7 @@ impl Quadrotor {
             inertia_matrix_inv,
             previous_thrust: 0.0,
             previous_torque: Vector3::zeros(),
+            imu,
         })
     }
 
@@ -260,7 +301,7 @@ impl Quadrotor {
     ///
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let control_thrust = mass * gravity;
     /// let control_torque = Vector3::new(0.0, 0.0, 0.0);
     /// quadrotor.update_dynamics_with_controls_euler(control_thrust, &control_torque);
@@ -294,7 +335,7 @@ impl Quadrotor {
     /// use peng_quad::Quadrotor;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let control_thrust = mass * gravity;
     /// let control_torque = Vector3::new(0.0, 0.0, 0.0);
     /// quadrotor.update_dynamics_with_controls_rk4(control_thrust, &control_torque);
@@ -346,7 +387,7 @@ impl Quadrotor {
     /// use nalgebra::UnitQuaternion;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let state = quadrotor.get_state();
     /// ```
     pub fn get_state(&self) -> [f32; 13] {
@@ -368,7 +409,7 @@ impl Quadrotor {
     /// use nalgebra::UnitQuaternion;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let state = [
     ///    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     /// ];
@@ -397,7 +438,7 @@ impl Quadrotor {
     /// use nalgebra::UnitQuaternion;
     /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
     /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
     /// let state = [
     ///   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     /// ];
@@ -438,131 +479,7 @@ impl Quadrotor {
         derivative
     }
 }
-/// Represents an Inertial Measurement Unit (IMU) with bias and noise characteristics
-/// # Example
-/// ```
-/// use nalgebra::Vector3;
-/// use peng_quad::Imu;
-/// let accel_noise_std = 0.0003;
-/// let gyro_noise_std = 0.02;
-/// let accel_bias_std = 0.0001;
-/// let gyro_bias_std = 0.001;
-/// let imu = Imu::new(accel_noise_std, gyro_noise_std, accel_bias_std, gyro_bias_std);
-/// ```
-pub struct Imu {
-    /// Accelerometer bias
-    pub accel_bias: Vector3<f32>,
-    /// Gyroscope bias
-    pub gyro_bias: Vector3<f32>,
-    /// Standard deviation of accelerometer noise
-    pub accel_noise_std: f32,
-    /// Standard deviation of gyroscope noise
-    pub gyro_noise_std: f32,
-    /// Standard deviation of accelerometer bias drift
-    pub accel_bias_std: f32,
-    /// Standard deviation of gyroscope bias drift
-    pub gyro_bias_std: f32,
-    /// Accelerometer noise distribution
-    accel_noise: Normal<f32>,
-    /// Gyroscope noise distribution
-    gyro_noise: Normal<f32>,
-    /// Accelerometer bias drift distribution
-    accel_bias_drift: Normal<f32>,
-    /// Gyroscope bias drift distribution
-    gyro_bias_drift: Normal<f32>,
-    /// Random number generator
-    rng: ChaCha8Rng,
-}
-/// Implements the IMU
-impl Imu {
-    /// Creates a new IMU with default parameters
-    /// # Arguments
-    /// * `accel_noise_std` - Standard deviation of accelerometer noise
-    /// * `gyro_noise_std` - Standard deviation of gyroscope noise
-    /// * `accel_bias_std` - Standard deviation of accelerometer bias drift
-    /// * `gyro_bias_std` - Standard deviation of gyroscope bias drift
-    /// # Returns
-    /// * A new Imu instance
-    /// # Example
-    /// ```
-    /// use peng_quad::Imu;
-    ///
-    /// let imu = Imu::new(0.01, 0.01, 0.01, 0.01);
-    /// ```
-    pub fn new(
-        accel_noise_std: f32,
-        gyro_noise_std: f32,
-        accel_bias_std: f32,
-        gyro_bias_std: f32,
-    ) -> Result<Self, SimulationError> {
-        Ok(Self {
-            accel_bias: Vector3::zeros(),
-            gyro_bias: Vector3::zeros(),
-            accel_noise_std,
-            gyro_noise_std,
-            accel_bias_std,
-            gyro_bias_std,
-            accel_noise: Normal::new(0.0, accel_noise_std)?,
-            gyro_noise: Normal::new(0.0, gyro_noise_std)?,
-            accel_bias_drift: Normal::new(0.0, accel_bias_std)?,
-            gyro_bias_drift: Normal::new(0.0, gyro_bias_std)?,
-            rng: ChaCha8Rng::from_entropy(),
-        })
-    }
-    /// Updates the IMU biases over time
-    /// # Arguments
-    /// * `dt` - Time step for the update
-    /// # Errors
-    /// * Returns a SimulationError if the bias drift cannot be calculated
-    /// # Example
-    /// ```
-    /// use peng_quad::Imu;
-    ///
-    /// let mut imu = Imu::new(0.01, 0.01, 0.01, 0.01).unwrap();
-    /// imu.update(0.01).unwrap();
-    /// ```
-    pub fn update(&mut self, dt: f32) -> Result<(), SimulationError> {
-        let dt_sqrt = fast_sqrt(dt);
-        let accel_drift = self.accel_bias_drift.sample(&mut self.rng) * dt_sqrt;
-        let gyro_drift = self.gyro_bias_drift.sample(&mut self.rng) * dt_sqrt;
-        self.accel_bias += Vector3::from_iterator((0..3).map(|_| accel_drift));
-        self.gyro_bias += Vector3::from_iterator((0..3).map(|_| gyro_drift));
-        Ok(())
-    }
-    /// Simulates IMU readings with added bias and noise
-    ///
-    /// The added bias and noise are based on normal distributions
-    /// # Arguments
-    /// * `true_acceleration` - The true acceleration vector
-    /// * `true_angular_velocity` - The true angular velocity vector
-    /// # Returns
-    /// * A tuple containing the measured acceleration and angular velocity
-    /// # Errors
-    /// * Returns a SimulationError if the IMU readings cannot be calculated
-    /// # Example
-    /// ```
-    /// use nalgebra::Vector3;
-    /// use peng_quad::Imu;
-    ///
-    /// let mut imu = Imu::new(0.01, 0.01, 0.01, 0.01).unwrap();
-    /// let true_acceleration = Vector3::new(0.0, 0.0, 9.81);
-    /// let true_angular_velocity = Vector3::new(0.0, 0.0, 0.0);
-    /// let (measured_acceleration, measured_ang_velocity) = imu.read(true_acceleration, true_angular_velocity).unwrap();
-    /// ```
-    pub fn read(
-        &mut self,
-        true_acceleration: Vector3<f32>,
-        true_angular_velocity: Vector3<f32>,
-    ) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError> {
-        let accel_noise_sample =
-            Vector3::from_iterator((0..3).map(|_| self.accel_noise.sample(&mut self.rng)));
-        let gyro_noise_sample =
-            Vector3::from_iterator((0..3).map(|_| self.gyro_noise.sample(&mut self.rng)));
-        let measured_acceleration = true_acceleration + self.accel_bias + accel_noise_sample;
-        let measured_ang_velocity = true_angular_velocity + self.gyro_bias + gyro_noise_sample;
-        Ok((measured_acceleration, measured_ang_velocity))
-    }
-}
+
 /// PID controller for quadrotor position and attitude control
 ///
 /// The kpid_pos and kpid_att gains are following the format of
@@ -680,6 +597,10 @@ impl PIDController {
         current_angular_velocity: &Vector3<f32>,
         dt: f32,
     ) -> Vector3<f32> {
+        // dbg!(desired_orientation);
+        // dbg!(current_orientation);
+        // dbg!(current_angular_velocity);
+        // let frame = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), PI);
         let error_orientation = current_orientation.inverse() * desired_orientation;
         let (roll_error, pitch_error, yaw_error) = error_orientation.euler_angles();
         let error_angles = Vector3::new(roll_error, pitch_error, yaw_error);
@@ -746,7 +667,7 @@ impl PIDController {
         let total_acceleration = acceleration + gravity_compensation;
         let total_acc_norm = total_acceleration.norm();
         let thrust = self.mass * total_acc_norm;
-        let desired_orientation = if total_acc_norm > 1e-6 {
+        let desired_orientation = if total_acc_norm > 1e-3 {
             let z_body = total_acceleration / total_acc_norm;
             let yaw_rotation = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), desired_yaw);
             let x_body_horizontal = yaw_rotation * Vector3::new(1.0, 0.0, 0.0);
@@ -1394,7 +1315,8 @@ impl PlannerManager {
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::{ObstacleAvoidancePlanner, Obstacle};
+/// use peng_quad::environment::{Obstacle};
+/// use peng_quad::{ObstacleAvoidancePlanner};
 /// let planner = ObstacleAvoidancePlanner {
 ///     target_position: Vector3::new(0.0, 0.0, 1.0),
 ///     start_time: 0.0,
@@ -1806,7 +1728,8 @@ pub struct PlannerStepConfig {
 /// # Example
 /// ```
 /// use peng_quad::config;
-/// use peng_quad::{PlannerManager, Quadrotor, Obstacle, PlannerStepConfig, update_planner, quadrotor::QuadrotorInterface};
+/// use peng_quad::environment::Obstacle;
+/// use peng_quad::{PlannerManager, Quadrotor, PlannerStepConfig, update_planner, quadrotor::QuadrotorInterface};
 /// use nalgebra::Vector3;
 /// let simulation_frequency = 1000;
 /// let initial_position = Vector3::new(0.0, 0.0, 0.0);
@@ -1816,8 +1739,8 @@ pub struct PlannerStepConfig {
 /// let time = 0.0;
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-/// let quad_state = quadrotor.observe().unwrap();
+/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let quad_state = quadrotor.observe(0.0).unwrap();
 /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
 /// let planner_config = vec![PlannerStepConfig {
 ///     step: 0,
@@ -1859,7 +1782,8 @@ pub fn update_planner(
 /// # Example
 /// ```
 /// use peng_quad::config;
-/// use peng_quad::{PlannerType, Quadrotor, Obstacle, PlannerStepConfig, create_planner, quadrotor::QuadrotorInterface};
+/// use peng_quad::environment::Obstacle;
+/// use peng_quad::{PlannerType, Quadrotor, PlannerStepConfig, create_planner, quadrotor::QuadrotorInterface};
 /// use nalgebra::Vector3;
 /// let step = PlannerStepConfig {
 ///    step: 0,
@@ -1874,8 +1798,8 @@ pub fn update_planner(
 /// let time = 0.0;
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-/// let quadrotor_state = quadrotor.observe().unwrap();
+/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let quadrotor_state = quadrotor.observe(0.0).unwrap();
 /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
 /// let planner = create_planner(&step, &quadrotor_state, time, &obstacles).unwrap();
 /// match planner {
@@ -1900,7 +1824,7 @@ pub fn create_planner(
             duration: parse_f32(params, "duration")?,
         })),
         "Hover" => Ok(PlannerType::Hover(HoverPlanner {
-            target_position: quad_state.position,
+            target_position: parse_vector3(params, "end_position")?,
             target_yaw: parse_f32(params, "target_yaw")?,
         })),
         "Lissajous" => Ok(PlannerType::Lissajous(LissajousPlanner {
@@ -2053,308 +1977,6 @@ pub fn parse_f32(value: &serde_yaml::Value, key: &str) -> Result<f32, Simulation
         .map(|v| v as f32)
         .ok_or_else(|| SimulationError::OtherError(format!("Invalid {}", key)))
 }
-/// Represents an obstacle in the simulation
-/// # Example
-/// ```
-/// use peng_quad::Obstacle;
-/// use nalgebra::Vector3;
-/// let obstacle = Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
-/// ```
-#[derive(Clone)]
-pub struct Obstacle {
-    /// The position of the obstacle
-    pub position: Vector3<f32>,
-    /// The velocity of the obstacle
-    pub velocity: Vector3<f32>,
-    /// The radius of the obstacle
-    pub radius: f32,
-}
-/// Implementation of the Obstacle
-impl Obstacle {
-    /// Creates a new obstacle with the given position, velocity, and radius
-    /// # Arguments
-    /// * `position` - The position of the obstacle
-    /// * `velocity` - The velocity of the obstacle
-    /// * `radius` - The radius of the obstacle
-    /// # Returns
-    /// * The new obstacle instance
-    /// # Example
-    /// ```
-    /// use peng_quad::Obstacle;
-    /// use nalgebra::Vector3;
-    /// let obstacle = Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
-    /// ```
-    pub fn new(position: Vector3<f32>, velocity: Vector3<f32>, radius: f32) -> Self {
-        Self {
-            position,
-            velocity,
-            radius,
-        }
-    }
-}
-/// Represents a maze in the simulation
-/// # Example
-/// ```
-/// use peng_quad::{Maze, Obstacle};
-/// use rand_chacha::ChaCha8Rng;
-/// use rand::SeedableRng;
-/// use nalgebra::Vector3;
-/// let maze = Maze {
-///     lower_bounds: [0.0, 0.0, 0.0],
-///     upper_bounds: [1.0, 1.0, 1.0],
-///     obstacles: vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)],
-///     obstacles_velocity_bounds: [0.0, 0.0, 0.0],
-///     obstacles_radius_bounds: [0.0, 0.0],
-///     rng: ChaCha8Rng::from_entropy(),
-/// };
-/// ```
-pub struct Maze {
-    /// The lower bounds of the maze in the x, y, and z directions
-    pub lower_bounds: [f32; 3],
-    /// The upper bounds of the maze in the x, y, and z directions
-    pub upper_bounds: [f32; 3],
-    /// The obstacles in the maze
-    pub obstacles: Vec<Obstacle>,
-    /// The bounds of the obstacles' velocity
-    pub obstacles_velocity_bounds: [f32; 3],
-    /// The bounds of the obstacles' radius
-    pub obstacles_radius_bounds: [f32; 2],
-    /// Rng for generating random numbers
-    pub rng: ChaCha8Rng,
-}
-/// Implementation of the maze
-impl Maze {
-    /// Creates a new maze with the given bounds and number of obstacles
-    /// # Arguments
-    /// * `lower_bounds` - The lower bounds of the maze
-    /// * `upper_bounds` - The upper bounds of the maze
-    /// * `num_obstacles` - The number of obstacles in the maze
-    /// # Returns
-    /// * The new maze instance
-    /// # Example
-    /// ```
-    /// use peng_quad::Maze;
-    /// let maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
-    /// ```
-    pub fn new(
-        lower_bounds: [f32; 3],
-        upper_bounds: [f32; 3],
-        num_obstacles: usize,
-        obstacles_velocity_bounds: [f32; 3],
-        obstacles_radius_bounds: [f32; 2],
-    ) -> Self {
-        let mut maze = Maze {
-            lower_bounds,
-            upper_bounds,
-            obstacles: Vec::new(),
-            obstacles_velocity_bounds,
-            obstacles_radius_bounds,
-            rng: ChaCha8Rng::from_entropy(),
-        };
-        maze.generate_obstacles(num_obstacles);
-        maze
-    }
-    /// Generates the obstacles in the maze
-    /// # Arguments
-    /// * `num_obstacles` - The number of obstacles to generate
-    /// # Example
-    /// ```
-    /// use peng_quad::Maze;
-    /// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
-    /// maze.generate_obstacles(5);
-    /// ```
-    pub fn generate_obstacles(&mut self, num_obstacles: usize) {
-        self.obstacles = (0..num_obstacles)
-            .map(|_| {
-                let position = Vector3::new(
-                    rand::Rng::gen_range(&mut self.rng, self.lower_bounds[0]..self.upper_bounds[0]),
-                    rand::Rng::gen_range(&mut self.rng, self.lower_bounds[1]..self.upper_bounds[1]),
-                    rand::Rng::gen_range(&mut self.rng, self.lower_bounds[2]..self.upper_bounds[2]),
-                );
-                let v_bounds = self.obstacles_velocity_bounds;
-                let r_bounds = self.obstacles_radius_bounds;
-                let velocity = Vector3::new(
-                    rand::Rng::gen_range(&mut self.rng, -v_bounds[0]..v_bounds[0]),
-                    rand::Rng::gen_range(&mut self.rng, -v_bounds[1]..v_bounds[1]),
-                    rand::Rng::gen_range(&mut self.rng, -v_bounds[2]..v_bounds[2]),
-                );
-                let radius = rand::Rng::gen_range(&mut self.rng, r_bounds[0]..r_bounds[1]);
-                Obstacle::new(position, velocity, radius)
-            })
-            .collect();
-    }
-    /// Updates the obstacles in the maze, if an obstacle hits a boundary, it bounces off
-    /// # Arguments
-    /// * `dt` - The time step
-    /// # Example
-    /// ```
-    /// use peng_quad::Maze;
-    /// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
-    /// maze.update_obstacles(0.1);
-    /// ```
-    pub fn update_obstacles(&mut self, dt: f32) {
-        self.obstacles.iter_mut().for_each(|obstacle| {
-            obstacle.position += obstacle.velocity * dt;
-            for i in 0..3 {
-                if obstacle.position[i] - obstacle.radius < self.lower_bounds[i]
-                    || obstacle.position[i] + obstacle.radius > self.upper_bounds[i]
-                {
-                    obstacle.velocity[i] *= -1.0;
-                }
-            }
-        });
-    }
-}
-/// Represents a camera in the simulation which is used to render the depth of the scene
-/// # Example
-/// ```
-/// use peng_quad::Camera;
-/// let camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
-/// ```
-pub struct Camera {
-    /// The resolution of the camera
-    pub resolution: (usize, usize),
-    /// The vertical field of view of the camera
-    pub fov_vertical: f32,
-    /// The horizontal field of view of the camera
-    pub fov_horizontal: f32,
-    /// The vertical focal length of the camera
-    pub vertical_focal_length: f32,
-    /// The horizontal focal length of the camera
-    pub horizontal_focal_length: f32,
-    /// The near clipping plane of the camera
-    pub near: f32,
-    /// The far clipping plane of the camera
-    pub far: f32,
-    /// The aspect ratio of the camera
-    pub aspect_ratio: f32,
-    /// The ray directions of each pixel in the camera
-    pub ray_directions: Vec<Vector3<f32>>,
-    /// Depth buffer
-    pub depth_buffer: Vec<f32>,
-}
-/// Implementation of the camera
-impl Camera {
-    /// Creates a new camera with the given resolution, field of view, near and far clipping planes
-    /// # Arguments
-    /// * `resolution` - The resolution of the camera
-    /// * `fov_vertical` - The vertical field of view of the camera
-    /// * `near` - The near clipping plane of the camera
-    /// * `far` - The far clipping plane of the camera
-    /// # Returns
-    /// * The new camera instance
-    /// # Example
-    /// ```
-    /// use peng_quad::Camera;
-    /// let camera = Camera::new((800, 600), 1.0, 5.0, 120.0);
-    /// ```
-    pub fn new(resolution: (usize, usize), fov_vertical: f32, near: f32, far: f32) -> Self {
-        let (width, height) = resolution;
-        let (aspect_ratio, tan_half_fov) =
-            (width as f32 / height as f32, (fov_vertical / 2.0).tan());
-        let mut ray_directions = Vec::with_capacity(width * height);
-        for y in 0..height {
-            for x in 0..width {
-                let x_ndc = (2.0 * x as f32 / width as f32 - 1.0) * aspect_ratio * tan_half_fov;
-                let y_ndc = (1.0 - 2.0 * y as f32 / height as f32) * tan_half_fov;
-                ray_directions.push(Vector3::new(1.0, x_ndc, y_ndc).normalize());
-            }
-        }
-        let fov_horizontal =
-            (width as f32 / height as f32 * (fov_vertical / 2.0).tan()).atan() * 2.0;
-        let horizontal_focal_length = (width as f32 / 2.0) / ((fov_horizontal / 2.0).tan());
-        let vertical_focal_length = (height as f32 / 2.0) / ((fov_vertical / 2.0).tan());
-        let depth_buffer = vec![0.0; width * height];
-
-        Self {
-            resolution,
-            fov_vertical,
-            fov_horizontal,
-            vertical_focal_length,
-            horizontal_focal_length,
-            near,
-            far,
-            aspect_ratio,
-            ray_directions,
-            depth_buffer,
-        }
-    }
-
-    /// Renders the depth of the scene from the perspective of the quadrotor
-    ///
-    /// When the depth value is out of the near and far clipping planes, it is set to infinity
-    /// When the resolution is larger than 32x24, multi-threading can accelerate the rendering
-    /// # Arguments
-    /// * `quad_position` - The position of the quadrotor
-    /// * `quad_orientation` - The orientation of the quadrotor
-    /// * `maze` - The maze in the scene
-    /// * `use_multi_threading` - Whether to use multi-threading to render the depth
-    /// # Errors
-    /// * If the depth buffer is not large enough to store the depth values
-    /// # Example
-    /// ```
-    /// use peng_quad::{Camera, Maze};
-    /// use nalgebra::{Vector3, UnitQuaternion};
-    /// let mut camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
-    /// let quad_position = Vector3::new(0.0, 0.0, 0.0);
-    /// let quad_orientation = UnitQuaternion::identity();
-    /// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
-    /// let use_multi_threading = true;
-    /// camera.render_depth(&quad_position, &quad_orientation, &maze, use_multi_threading);
-    /// let use_multi_threading = false;
-    /// camera.render_depth(&quad_position, &quad_orientation, &maze, use_multi_threading);
-    /// ```
-    pub fn render_depth(
-        &mut self,
-        quad_position: &Vector3<f32>,
-        quad_orientation: &UnitQuaternion<f32>,
-        maze: &Maze,
-        use_multi_threading: bool,
-    ) -> Result<(), SimulationError> {
-        let (width, height) = self.resolution;
-        let total_pixels = width * height;
-        let rotation_camera_to_world = quad_orientation.to_rotation_matrix().matrix()
-            * Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
-        let rotation_world_to_camera = rotation_camera_to_world.transpose();
-
-        const CHUNK_SIZE: usize = 64;
-        if use_multi_threading {
-            self.depth_buffer
-                .par_chunks_mut(CHUNK_SIZE)
-                .enumerate()
-                .try_for_each(|(chunk_idx, chunk)| {
-                    let start_idx = chunk_idx * CHUNK_SIZE;
-                    for (i, depth) in chunk.iter_mut().enumerate() {
-                        let ray_idx = start_idx + i;
-                        if ray_idx >= total_pixels {
-                            break;
-                        }
-                        *depth = ray_cast(
-                            quad_position,
-                            &rotation_world_to_camera,
-                            &(rotation_camera_to_world * self.ray_directions[ray_idx]),
-                            maze,
-                            self.near,
-                            self.far,
-                        )?;
-                    }
-                    Ok::<(), SimulationError>(())
-                })?;
-        } else {
-            for i in 0..total_pixels {
-                self.depth_buffer[i] = ray_cast(
-                    quad_position,
-                    &rotation_world_to_camera,
-                    &(rotation_camera_to_world * self.ray_directions[i]),
-                    maze,
-                    self.near,
-                    self.far,
-                )?;
-            }
-        }
-        Ok(())
-    }
-}
 
 /// Casts a ray from the camera origin in the given direction
 /// # Arguments
@@ -2370,7 +1992,8 @@ impl Camera {
 /// * If the ray does not hit any obstacles
 /// # Example
 /// ```
-/// use peng_quad::{ray_cast, Maze};
+/// use peng_quad::ray_cast;
+/// use peng_quad::environment::Maze;
 /// use nalgebra::{Vector3, Matrix3};
 /// let origin = Vector3::new(0.0, 0.0, 0.0);
 /// let rotation_world_to_camera = Matrix3::identity();
@@ -2437,147 +2060,7 @@ pub fn ray_cast(
         Ok(f32::INFINITY)
     }
 }
-/// Logs simulation data to the rerun recording stream
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `quad` - The Quadrotor instance
-/// * `desired_position` - The desired position vector
-/// * `measured_accel` - The measured acceleration vector
-/// * `measured_gyro` - The measured angular velocity vector
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::config;;
-/// use peng_quad::{Quadrotor, log_data, quadrotor::QuadrotorInterface};
-/// use nalgebra::Vector3;
-/// let rec = rerun::RecordingStreamBuilder::new("peng").connect().unwrap();
-/// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
-/// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
-/// let quad_state = quadrotor.observe().unwrap();
-/// let desired_position = Vector3::new(0.0, 0.0, 0.0);
-/// let desired_velocity = Vector3::new(0.0, 0.0, 0.0);
-/// let measured_accel = Vector3::new(0.0, 0.0, 0.0);
-/// let measured_gyro = Vector3::new(0.0, 0.0, 0.0);
-/// log_data(&rec, &quad_state, &desired_position, &desired_velocity, &measured_accel, &measured_gyro, &Vector3::new(0.0, 0.0, 0.0)).unwrap();
-/// ```
-pub fn log_data(
-    rec: &rerun::RecordingStream,
-    quad_state: &QuadrotorState,
-    desired_position: &Vector3<f32>,
-    desired_velocity: &Vector3<f32>,
-    measured_accel: &Vector3<f32>,
-    measured_gyro: &Vector3<f32>,
-    torque: &Vector3<f32>,
-) -> Result<(), SimulationError> {
-    rec.log(
-        "world/quad/desired_position",
-        &rerun::Points3D::new([(desired_position.x, desired_position.y, desired_position.z)])
-            .with_radii([0.1])
-            .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
-    )?;
-    rec.log(
-        "world/quad/base_link",
-        &rerun::Transform3D::from_translation_rotation(
-            rerun::Vec3D::new(
-                quad_state.position.x,
-                quad_state.position.y,
-                quad_state.position.z,
-            ),
-            rerun::Quaternion::from_xyzw([
-                quad_state.orientation.i,
-                quad_state.orientation.j,
-                quad_state.orientation.k,
-                quad_state.orientation.w,
-            ]),
-        )
-        .with_axis_length(0.7),
-    )?;
-    let (quad_roll, quad_pitch, quad_yaw) = quad_state.orientation.euler_angles();
-    let quad_euler_angles: Vector3<f32> = Vector3::new(quad_roll, quad_pitch, quad_yaw);
-    for (pre, vec) in [
-        ("position", &quad_state.position),
-        ("velocity", &quad_state.velocity),
-        ("accel", measured_accel),
-        ("orientation", &quad_euler_angles),
-        ("gyro", measured_gyro),
-        ("desired_position", desired_position),
-        ("desired_velocity", desired_velocity),
-        ("torque", torque),
-    ] {
-        for (i, a) in ["x", "y", "z"].iter().enumerate() {
-            rec.log(format!("{}/{}", pre, a), &rerun::Scalar::new(vec[i] as f64))?;
-        }
-    }
-    Ok(())
-}
-/// Log the maze tube to the rerun recording stream
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `maze` - The maze instance
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::{Maze, log_maze_tube};
-/// use rerun::RecordingStreamBuilder;
-/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
-/// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
-/// log_maze_tube(&rec, &maze).unwrap();
-/// ```
-pub fn log_maze_tube(rec: &rerun::RecordingStream, maze: &Maze) -> Result<(), SimulationError> {
-    let (lower_bounds, upper_bounds) = (maze.lower_bounds, maze.upper_bounds);
-    let center_position = rerun::external::glam::Vec3::new(
-        (lower_bounds[0] + upper_bounds[0]) / 2.0,
-        (lower_bounds[1] + upper_bounds[1]) / 2.0,
-        (lower_bounds[2] + upper_bounds[2]) / 2.0,
-    );
-    let half_sizes = rerun::external::glam::Vec3::new(
-        (upper_bounds[0] - lower_bounds[0]) / 2.0,
-        (upper_bounds[1] - lower_bounds[1]) / 2.0,
-        (upper_bounds[2] - lower_bounds[2]) / 2.0,
-    );
-    rec.log(
-        "world/maze/tube",
-        &rerun::Boxes3D::from_centers_and_half_sizes([center_position], [half_sizes])
-            .with_colors([rerun::Color::from_rgb(128, 128, 255)]),
-    )?;
-    Ok(())
-}
-/// Log the maze obstacles to the rerun recording stream
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `maze` - The maze instance
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::{Maze, log_maze_obstacles};
-/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
-/// let mut maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
-/// log_maze_obstacles(&rec, &maze).unwrap();
-/// ```
-pub fn log_maze_obstacles(
-    rec: &rerun::RecordingStream,
-    maze: &Maze,
-) -> Result<(), SimulationError> {
-    let (positions, radii): (Vec<(f32, f32, f32)>, Vec<f32>) = maze
-        .obstacles
-        .iter()
-        .map(|obstacle| {
-            let pos = obstacle.position;
-            ((pos.x, pos.y, pos.z), obstacle.radius)
-        })
-        .unzip();
-    rec.log(
-        "world/maze/obstacles",
-        &rerun::Points3D::new(positions)
-            .with_radii(radii)
-            .with_colors([rerun::Color::from_rgb(255, 128, 128)]),
-    )?;
-    Ok(())
-}
+
 /// A struct to hold trajectory data
 /// # Example
 /// ```
@@ -2585,6 +2068,7 @@ pub fn log_maze_obstacles(
 /// let initial_point = nalgebra::Vector3::new(0.0, 0.0, 0.0);
 /// let mut trajectory = Trajectory::new(initial_point);
 /// ```
+#[derive(Clone, Debug)]
 pub struct Trajectory {
     /// A vector of 3D points
     pub points: Vec<Vector3<f32>>,
@@ -2636,245 +2120,6 @@ impl Trajectory {
         }
     }
 }
-/// log trajectory data to the rerun recording stream
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `trajectory` - The Trajectory instance
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::{Trajectory, log_trajectory};
-/// use nalgebra::Vector3;
-/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
-/// let mut trajectory = Trajectory::new(nalgebra::Vector3::new(0.0, 0.0, 0.0));
-/// trajectory.add_point(nalgebra::Vector3::new(1.0, 0.0, 0.0));
-/// log_trajectory(&rec, &trajectory).unwrap();
-/// ```
-pub fn log_trajectory(
-    rec: &rerun::RecordingStream,
-    trajectory: &Trajectory,
-) -> Result<(), SimulationError> {
-    let path = trajectory
-        .points
-        .iter()
-        .map(|p| (p.x, p.y, p.z))
-        .collect::<Vec<(f32, f32, f32)>>();
-    rec.log(
-        "world/quad/path",
-        &rerun::LineStrips3D::new([path]).with_colors([rerun::Color::from_rgb(0, 255, 255)]),
-    )?;
-    Ok(())
-}
-/// Log mesh data to the rerun recording stream
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `division` - The number of divisions in the mesh
-/// * `spacing` - The spacing between divisions
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::log_mesh;
-/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
-/// log_mesh(&rec, 10, 0.1).unwrap();
-/// ```
-pub fn log_mesh(
-    rec: &rerun::RecordingStream,
-    division: usize,
-    spacing: f32,
-) -> Result<(), SimulationError> {
-    let grid_size: usize = division + 1;
-    let half_grid_size: f32 = (division as f32 * spacing) / 2.0;
-    let points: Vec<rerun::external::glam::Vec3> = (0..grid_size)
-        .flat_map(|i| {
-            (0..grid_size).map(move |j| {
-                rerun::external::glam::Vec3::new(
-                    j as f32 * spacing - half_grid_size,
-                    i as f32 * spacing - half_grid_size,
-                    0.0,
-                )
-            })
-        })
-        .collect();
-    let horizontal_lines: Vec<Vec<rerun::external::glam::Vec3>> = (0..grid_size)
-        .map(|i| points[i * grid_size..(i + 1) * grid_size].to_vec())
-        .collect();
-    let vertical_lines: Vec<Vec<rerun::external::glam::Vec3>> = (0..grid_size)
-        .map(|j| (0..grid_size).map(|i| points[i * grid_size + j]).collect())
-        .collect();
-    let line_strips: Vec<Vec<rerun::external::glam::Vec3>> =
-        horizontal_lines.into_iter().chain(vertical_lines).collect();
-    rec.log(
-        "world/mesh",
-        &rerun::LineStrips3D::new(line_strips)
-            .with_colors([rerun::Color::from_rgb(255, 255, 255)])
-            .with_radii([0.02]),
-    )?;
-    Ok(())
-}
-/// Log depth image data to the rerun recording stream
-///
-/// When the depth value is `f32::INFINITY`, the pixel is considered invalid and logged as black
-/// When the resolution is larger than 32x24, multi-threading can accelerate the rendering
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `cam` - The Camera instance
-/// * `use_multi_threading` - Whether to use multithreading to log the depth image
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::{log_depth_image, Camera};
-/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
-/// let camera = Camera::new((640, 480), 0.1, 100.0, 60.0);
-/// let use_multi_threading = false;
-/// log_depth_image(&rec, &camera, use_multi_threading).unwrap();
-/// let use_multi_threading = true;
-/// log_depth_image(&rec, &camera, use_multi_threading).unwrap();
-/// ```
-pub fn log_depth_image(
-    rec: &rerun::RecordingStream,
-    cam: &Camera,
-    use_multi_threading: bool,
-) -> Result<(), SimulationError> {
-    let (width, height) = (cam.resolution.0, cam.resolution.1);
-    let (min_depth, max_depth) = (cam.near, cam.far);
-    let depth_image = &cam.depth_buffer;
-    let mut image: rerun::external::ndarray::Array<u8, _> =
-        rerun::external::ndarray::Array::zeros((height, width, 3));
-    let depth_range = max_depth - min_depth;
-    let scale_factor = 255.0 / depth_range;
-    if use_multi_threading {
-        const CHUNK_SIZE: usize = 32;
-        image
-            .as_slice_mut()
-            .expect("Failed to get mutable slice of image")
-            .par_chunks_exact_mut(CHUNK_SIZE * 3)
-            .enumerate()
-            .for_each(|(chunk_index, chunk)| {
-                let start_index = chunk_index * 32;
-                for (i, pixel) in chunk.chunks_exact_mut(3).enumerate() {
-                    let idx = start_index + i;
-                    let depth = depth_image[idx];
-                    let color = if depth.is_finite() {
-                        let normalized_depth =
-                            ((depth - min_depth) * scale_factor).clamp(0.0, 255.0);
-                        color_map_fn(normalized_depth)
-                    } else {
-                        (0, 0, 0)
-                    };
-                    (pixel[0], pixel[1], pixel[2]) = color;
-                }
-            });
-    } else {
-        for (index, pixel) in image
-            .as_slice_mut()
-            .expect("Failed to get mutable slice of image")
-            .chunks_exact_mut(3)
-            .enumerate()
-        {
-            let depth = depth_image[index];
-            let color = if depth.is_finite() {
-                let normalized_depth = ((depth - min_depth) * scale_factor).clamp(0.0, 255.0);
-                color_map_fn(normalized_depth)
-            } else {
-                (0, 0, 0)
-            };
-            (pixel[0], pixel[1], pixel[2]) = color;
-        }
-    }
-    let rerun_image = rerun::Image::from_color_model_and_tensor(rerun::ColorModel::RGB, image)
-        .map_err(|e| SimulationError::OtherError(format!("Failed to create rerun image: {}", e)))?;
-    rec.log("world/quad/cam/depth", &rerun_image)?;
-    Ok(())
-}
-/// creates pinhole camera
-/// # Arguments
-/// * `rec` - The rerun::RecordingStream instance
-/// * `cam` - The camera object
-/// * `cam_position` - The position vector of the camera (aligns with the quad)
-/// * `cam_orientation` - The orientation quaternion of quad
-/// * `cam_transform` - The transform matrix between quad and camera alignment
-/// # Errors
-/// * If the data cannot be logged to the recording stream
-/// # Example
-/// ```no_run
-/// use peng_quad::{log_pinhole_depth, Camera};
-/// use nalgebra::{Vector3, UnitQuaternion};
-/// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
-/// let depth_image = vec![ 0.0f32 ; 640 * 480];
-/// let cam_position = Vector3::new(0.0,0.0,0.0);
-/// let cam_orientation = UnitQuaternion::identity();
-/// let cam_transform = [0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, -1.0, 0.0];
-/// let camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
-/// log_pinhole_depth(&rec, &camera, cam_position, cam_orientation, cam_transform).unwrap();
-/// ```
-pub fn log_pinhole_depth(
-    rec: &rerun::RecordingStream,
-    cam: &Camera,
-    cam_position: Vector3<f32>,
-    cam_orientation: UnitQuaternion<f32>,
-    cam_transform: [f32; 9],
-) -> Result<(), SimulationError> {
-    let depth_image = &cam.depth_buffer;
-    let (width, height) = cam.resolution;
-    let pinhole_camera = rerun::Pinhole::from_focal_length_and_resolution(
-        (cam.horizontal_focal_length, cam.vertical_focal_length),
-        (width as f32, height as f32),
-    )
-    .with_camera_xyz(rerun::components::ViewCoordinates::RDF)
-    .with_resolution((width as f32, height as f32))
-    .with_principal_point((width as f32 / 2.0, height as f32 / 2.0));
-    let rotated_camera_orientation = UnitQuaternion::from_rotation_matrix(
-        &(cam_orientation.to_rotation_matrix()
-            * Rotation3::from_matrix_unchecked(Matrix3::from_row_slice(&cam_transform))),
-    );
-    let cam_transform = rerun::Transform3D::from_translation_rotation(
-        rerun::Vec3D::new(cam_position.x, cam_position.y, cam_position.z),
-        rerun::Quaternion::from_xyzw([
-            rotated_camera_orientation.i,
-            rotated_camera_orientation.j,
-            rotated_camera_orientation.k,
-            rotated_camera_orientation.w,
-        ]),
-    );
-    rec.log("world/quad/cam", &cam_transform)?;
-    rec.log("world/quad/cam", &pinhole_camera)?;
-    let depth_image_rerun =
-        rerun::external::ndarray::Array::from_shape_vec((height, width), depth_image.to_vec())
-            .unwrap();
-    rec.log(
-        "world/quad/cam/rerun_depth",
-        &rerun::DepthImage::try_from(depth_image_rerun)
-            .unwrap()
-            .with_meter(1.0),
-    )?;
-
-    Ok(())
-}
-/// turbo color map function
-/// # Arguments
-/// * `gray` - The gray value in the range [0, 255]
-/// # Returns
-/// * The RGB color value in the range [0, 255]
-/// # Example
-/// ```
-/// use peng_quad::color_map_fn;
-/// let color = color_map_fn(128.0);
-/// ```
-#[inline]
-pub fn color_map_fn(gray: f32) -> (u8, u8, u8) {
-    let x = gray / 255.0;
-    let r = (34.61
-        + x * (1172.33 - x * (10793.56 - x * (33300.12 - x * (38394.49 - x * 14825.05)))))
-        .clamp(0.0, 255.0) as u8;
-    let g = (23.31 + x * (557.33 + x * (1225.33 - x * (3574.96 - x * (1073.77 + x * 707.56)))))
-        .clamp(0.0, 255.0) as u8;
-    let b = (27.2 + x * (3211.1 - x * (15327.97 - x * (27814.0 - x * (22569.18 - x * 6838.66)))))
-        .clamp(0.0, 255.0) as u8;
-    (r, g, b)
-}
 
 /// log joystick positions
 /// # Arguments
@@ -2884,7 +2129,8 @@ pub fn color_map_fn(gray: f32) -> (u8, u8, u8) {
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{Trajectory, log_trajectory};
+/// use peng_quad::Trajectory;
+/// use peng_quad::logger::log_trajectory;
 /// use nalgebra::Vector3;
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
 /// let mut trajectory = Trajectory::new(nalgebra::Vector3::new(0.0, 0.0, 0.0));
@@ -2933,7 +2179,7 @@ pub fn log_joy(
 /// # Returns
 /// * The square root of the input value
 #[inline(always)]
-fn fast_sqrt(x: f32) -> f32 {
+pub fn fast_sqrt(x: f32) -> f32 {
     let i = x.to_bits();
     let i = 0x1fbd1df5 + (i >> 1);
     f32::from_bits(i)

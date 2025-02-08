@@ -90,13 +90,16 @@ impl Default for SimulationConfig {
 /// Vehicle Specifig configuration
 pub enum QuadrotorConfigurations {
     Peng(QuadrotorConfig),
-    Liftoff(QuadrotorConfig),
+    Liftoff(LiftoffQuadrotorConfig),
+    Betaflight(Betaflight),
 }
 
-#[derive(Copy, Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
+    /// Mass of the quadrotor in kg
+    pub id: String,
     /// Mass of the quadrotor in kg
     pub mass: f32,
     /// Drag coefficient in Ns^2/m^2
@@ -114,6 +117,7 @@ pub struct QuadrotorConfig {
 impl Default for QuadrotorConfig {
     fn default() -> Self {
         QuadrotorConfig {
+            id: "quadrotor".to_string(),
             mass: 1.3,
             drag_coefficient: 0.000,
             inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
@@ -135,6 +139,89 @@ impl QuadrotorConfig {
             .ok_or(SimulationError::NalgebraError(
                 "Failed to invert inertia matrix".to_string(),
             ))
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(default)]
+/// Configuration for the quadrotor
+pub struct LiftoffQuadrotorConfig {
+    /// ID or name of quadrotor
+    pub id: String,
+    /// Mass of the quadrotor in kg
+    pub mass: f32,
+    /// Gravity in m/s^2
+    pub gravity: f32,
+    /// Inertia matrix in kg*m^2
+    pub inertia_matrix: [f32; 9],
+    /// Maximum thrust in kilograms
+    pub max_thrust_kg: f32,
+    /// Arm length in meters
+    pub arm_length_m: f32,
+    /// Yaw torque constant
+    pub yaw_torque_constant: f32,
+    /// The IP address where Liftoff is publishing state data
+    pub ip_address: String,
+    pub connection_timeout: tokio::time::Duration,
+    pub max_retry_delay: tokio::time::Duration,
+    pub serial_port: Option<String>,
+    pub baud_rate: u32,
+}
+
+impl Default for LiftoffQuadrotorConfig {
+    fn default() -> Self {
+        LiftoffQuadrotorConfig {
+            id: "LiftoffQuad".to_string(),
+            mass: 1.3,
+            gravity: 9.81,
+            inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
+            max_thrust_kg: 1.3 * 2.5,
+            arm_length_m: 0.150,
+            yaw_torque_constant: 0.05,
+            ip_address: String::from("0.0.0.0:9001"),
+            connection_timeout: tokio::time::Duration::from_secs(5 * 60),
+            max_retry_delay: tokio::time::Duration::from_secs(30),
+            serial_port: None,
+            baud_rate: 460800,
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(default)]
+/// Configuration for the quadrotor
+pub struct Betaflight {
+    pub id: String,
+    pub quadrotor_config: QuadrotorConfig,
+    /// The IP address where Liftoff is publishing state data
+    pub vicon_address: String,
+    pub connection_timeout: tokio::time::Duration,
+    pub max_retry_delay: tokio::time::Duration,
+    pub serial_port: Option<String>,
+    pub baud_rate: u32,
+}
+
+impl Default for Betaflight {
+    fn default() -> Self {
+        Betaflight {
+            quadrotor_config: QuadrotorConfig::default(),
+            vicon_address: String::from("0.0.0.0:51001"),
+            id: String::new(),
+            connection_timeout: tokio::time::Duration::from_secs(5 * 60),
+            max_retry_delay: tokio::time::Duration::from_secs(30),
+            serial_port: None,
+            baud_rate: 460800,
+        }
+    }
+}
+impl Betaflight {
+    /// Calculate all maximum torques and return them as a tuple
+    pub fn max_torques(&self) -> (f32, f32, f32) {
+        let motor_thrust = self.quadrotor_config.max_thrust_kg / 4.0;
+        // The maximum roll and pitch torques
+        let max_rp_torque = 2.0 * self.quadrotor_config.arm_length_m * motor_thrust;
+        let yaw_torque = 2.0 * self.quadrotor_config.yaw_torque_constant * motor_thrust;
+        (max_rp_torque, max_rp_torque, yaw_torque)
     }
 }
 
@@ -162,7 +249,7 @@ pub struct PIDGains {
     pub kd: [f32; 3],
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(Clone, serde::Deserialize, Default)]
 /// Configuration for the IMU
 pub struct ImuConfig {
     /// Accelerometer noise standard deviation
@@ -234,7 +321,7 @@ mod tests {
     #[test]
     fn test_base_config() {
         let config = Config::from_yaml("tests/testdata/test_config_base.yaml").unwrap();
-        let mut quadrotor_config: QuadrotorConfig = match config.quadrotor {
+        let quadrotor_config: QuadrotorConfig = match config.quadrotor {
             QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config,
             _ => panic!("Failed to load Peng configuration"),
         };
@@ -250,5 +337,26 @@ mod tests {
         assert_eq!(config.pid_controller.pos_max_int, [10.0, 10.0, 10.0]);
         assert_eq!(config.imu.accel_noise_std, 0.02);
         assert_eq!(config.maze.upper_bounds, [4.0, 2.0, 2.0]);
+    }
+
+    #[test]
+    fn test_liftoff_config() {
+        let config = Config::from_yaml("tests/testdata/test_liftoff_base.yaml").unwrap();
+        let liftoff_config = match config.quadrotor {
+            QuadrotorConfigurations::Liftoff(liftoff_config) => liftoff_config,
+            _ => panic!("Failed to load Liftoff configuration"),
+        };
+        assert_eq!(liftoff_config.ip_address, "0.0.0.0:9001");
+    }
+
+    #[test]
+    fn test_betaflight_config() {
+        let config = Config::from_yaml("tests/testdata/test_betaflight_base.yaml")
+            .expect("failed to unwrap");
+        let liftoff_config = match config.quadrotor {
+            QuadrotorConfigurations::Betaflight(liftoff_config) => liftoff_config,
+            _ => panic!("Failed to load Liftoff configuration"),
+        };
+        assert_eq!(liftoff_config.vicon_address, "0.0.0.0:51001");
     }
 }
