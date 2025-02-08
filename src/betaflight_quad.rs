@@ -1,5 +1,6 @@
+#![allow(clippy::all, dead_code, unused_variables)]
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
-use nalgebra::{AbstractRotation, UnitQuaternion, Vector3};
+use nalgebra::{UnitQuaternion, Vector3};
 use peng_quad::config;
 use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
 use peng_quad::SimulationError;
@@ -61,7 +62,7 @@ impl BetaflightQuad {
                         e.to_string()
                     ))
                 })?;
-                let start_time = std::time::Instant::now();
+                let _start_time = std::time::Instant::now();
                 writer
                     .serial_port
                     .set_timeout(Duration::from_millis(25))
@@ -140,7 +141,7 @@ impl BetaflightQuad {
 impl QuadrotorInterface for BetaflightQuad {
     fn control(
         &mut self,
-        step_number: usize,
+        _step_number: usize,
         thrust: f32,
         torque: &Vector3<f32>,
     ) -> Result<Option<(f32, Vector3<f32>)>, SimulationError> {
@@ -178,7 +179,7 @@ impl QuadrotorInterface for BetaflightQuad {
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
     #[cfg(feature = "vicon")]
-    fn observe(&mut self, t: f32) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, _t: f32) -> Result<QuadrotorState, SimulationError> {
         if !self
             .consumer
             .has_changed()
