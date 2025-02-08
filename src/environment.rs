@@ -9,7 +9,7 @@ use rand_chacha::ChaCha8Rng;
 /// use nalgebra::Vector3;
 /// let obstacle = Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Obstacle {
     /// The position of the obstacle
     pub position: Vector3<f32>,
@@ -74,6 +74,21 @@ pub struct Maze {
     /// Rng for generating random numbers
     pub rng: ChaCha8Rng,
 }
+
+// Implement `Default`
+impl Default for Maze {
+    fn default() -> Self {
+        Self {
+            lower_bounds: [0.0, 0.0, 0.0],    // Default maze starts at origin
+            upper_bounds: [10.0, 10.0, 10.0], // Default size 10x10x10
+            obstacles: Vec::new(),            // No obstacles by default
+            obstacles_velocity_bounds: [0.0, 0.0, 0.0], // No movement
+            obstacles_radius_bounds: [0.5, 2.0], // Default obstacle size range
+            rng: ChaCha8Rng::seed_from_u64(0), // Deterministic default RNG seed
+        }
+    }
+}
+
 /// Implementation of the maze
 impl Maze {
     /// Creates a new maze with the given bounds and number of obstacles

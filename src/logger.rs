@@ -252,7 +252,8 @@ impl<'a> RerunLogger<'a> {
 /// let measured_accel = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_gyro = Vector3::new(0.0, 0.0, 0.0);
 /// let measured_torque = Vector3::new(0.0, 0.0, 0.0);
-/// log_data(&rec, &quad_state, &desired_position, &desired_orientation, &desired_velocity, &measured_accel, &measured_gyro, &measured_torque).unwrap();
+///
+/// log_data(&rec, &quad_state, &desired_position, &desired_orientation, &desired_velocity, &measured_torque).unwrap();
 /// ```
 pub fn log_data(
     rec: &rerun::RecordingStream,
