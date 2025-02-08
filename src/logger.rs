@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables)]
 use crate::config::{self};
 use crate::environment::Maze;
 use crate::quadrotor::QuadrotorState;
