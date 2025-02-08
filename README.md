@@ -44,8 +44,10 @@ Peng is a minimal quadrotor autonomy framework written in Rust that provides rea
 
 ### Prerequisites
 
+# TODO: put protoc requirements behind a feature flag for ease of start in pure simulation
 - [Rust](https://www.rust-lang.org/tools/install)
 - [rerun-cli](https://rerun.io/docs/getting-started/installing-viewer)
+- [protoc](https://grpc.io/docs/protoc-installation/) - required for interfacing with Liftoff: FPV Drone Racing or hardware experiments.
 
 ### Installation from Crates.io
 

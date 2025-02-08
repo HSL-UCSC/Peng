@@ -15,11 +15,16 @@ simulation:
   use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
 
 quadrotor:
-  type: "Peng"
-  mass: 1.3 # Mass of the quadrotor (kg)
-  drag_coefficient: 0.000 # Aerodynamic drag coefficient
-  # Inertia matrix [Ixx, Ixy, Ixz, Iyx, Iyy, Iyz, Izx, Izy, Izz] (kg*m^2)
-  inertia_matrix: [5.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3]
+  type: Betaflight
+  quadrotor_config:
+    mass: 1.3 # Mass of the quadrotor (kg)
+    drag_coefficient: 0.000 # Aerodynamic drag coefficient
+    # Inertia matrix [Ixx, Ixy, Ixz, Iyx, Iyy, Iyz, Izx, Izy, Izz] (kg*m^2)
+    inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3]
+
+vehicle_configuration:
+  type: LiftoffConfiguration
+  ip_address: 0.0.0.0:9001
 
 pid_controller:
   pos_gains: # PID gains for position control
