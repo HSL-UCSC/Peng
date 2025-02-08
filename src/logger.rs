@@ -95,19 +95,19 @@ pub struct ControlOutput {
     pub torque_out: Vector3<f32>,
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct RerunLogger<'a> {
     pub tx: tokio::sync::mpsc::Sender<String>,
     rec: Arc<RecordingStream>,
     config: &'a config::Config,
-    _maze: &'a Maze,
     trajectory_map: std::collections::HashMap<String, Trajectory>,
+    camera: Camera,
 }
 
 impl<'a> RerunLogger<'a> {
     pub fn new(
         config: &'a config::Config,
-        maze: &'a Maze,
+        maze: &Maze,
         quadrotors: Vec<crate::config::QuadrotorConfig>,
     ) -> Result<Self, SimulationError> {
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
@@ -133,6 +133,13 @@ impl<'a> RerunLogger<'a> {
             trajectory_map.insert(quad.id.clone(), trajectory);
         });
 
+        let camera = Camera::new(
+            config.camera.resolution,
+            config.camera.fov_vertical.to_radians(),
+            config.camera.near,
+            config.camera.far,
+        );
+
         tokio::spawn(async move {
             loop {
                 if let Some(message) = rx.recv().await {
@@ -150,8 +157,8 @@ impl<'a> RerunLogger<'a> {
             // rx,
             config,
             rec: Arc::new(rec),
-            _maze: maze,
             trajectory_map,
+            camera,
         })
     }
 
@@ -159,9 +166,7 @@ impl<'a> RerunLogger<'a> {
         &mut self,
         time: f32,
         quad_state: QuadrotorState,
-        maze: Maze,
-        camera: &mut Camera,
-        // mut trajectory: Trajectory,
+        maze: &Maze,
         desired_state: DesiredState,
         control_out: ControlOutput,
     ) -> Result<(), SimulationError> {
@@ -207,15 +212,20 @@ impl<'a> RerunLogger<'a> {
             Some((control_out.thrust_out, control_out.torque_out)),
         )?;
         if self.config.render_depth {
-            log_depth_image(rec, camera, self.config.use_multithreading_depth_rendering)?;
+            log_depth_image(
+                rec,
+                &self.camera,
+                self.config.use_multithreading_depth_rendering,
+            )?;
             log_pinhole_depth(
                 rec,
-                camera,
+                &self.camera,
                 rerun_quad_state.position,
                 rerun_quad_state.orientation,
                 self.config.camera.rotation_transform,
             )?;
-            camera.render_depth(
+            // TODO: Render depth only for ego vehicle
+            self.camera.render_depth(
                 &quad_state.position,
                 &quad_state.orientation,
                 &maze,

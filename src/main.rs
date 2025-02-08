@@ -14,6 +14,7 @@ use std::time::Instant;
 #[tokio::main]
 /// Main function for the simulation
 async fn main() -> Result<(), SimulationError> {
+    // Configuration
     let mut config_str = "config/quad.yaml";
     let args: Vec<String> = std::env::args().collect();
     let plog = logger::PrintLogger::new(logger::LogLevel::Debug);
@@ -29,8 +30,7 @@ async fn main() -> Result<(), SimulationError> {
     info!(plog, "Use rerun.io: {}", config.use_rerun);
     info!(plog, "Using quadrotor: {:?}", config.quadrotor);
 
-    info!(plog, "Using quadrotor: {:?}", config.quadrotor);
-    let (mut quad, mass) = quadrotor_factory::build_quadrotor(&config)?;
+    // Initialize Environment
     let mut maze = Maze::new(
         config.maze.lower_bounds,
         config.maze.upper_bounds,
@@ -38,17 +38,12 @@ async fn main() -> Result<(), SimulationError> {
         config.maze.obstacles_velocity_bounds,
         config.maze.obstacles_radius_bounds,
     );
-    // TODO: lets not do multiple cameras, but we need to determine how to asssociate the camera
-    // with the ego vehicle
-    let mut camera = Camera::new(
-        config.camera.resolution,
-        config.camera.fov_vertical.to_radians(),
-        config.camera.near,
-        config.camera.far,
-    );
+
+    // Instantiate quadrotor
+    info!(plog, "Using quadrotor: {:?}", config.quadrotor);
+    let (mut quad, mass) = quadrotor_factory::build_quadrotor(&config)?;
+
     let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
-    // let mut trajectory = Trajectory::new(Vector3::new(0.0, 0.0, 0.0));
-    let mut _depth_buffer: Vec<f32> = vec![0.0; camera.resolution.0 * camera.resolution.1];
     let planner_config: Vec<PlannerStepConfig> = config
         .planner_schedule
         .iter()
@@ -58,11 +53,10 @@ async fn main() -> Result<(), SimulationError> {
             params: step.params.clone(),
         })
         .collect();
-    let maze_clone = maze.clone();
+    // Configure logger
     let mut rerun_logger_handle = if config.use_rerun {
         // Set up Rerun
-        let rerun_state_logger =
-            logger::RerunLogger::new(&config, &maze_clone, vec![quad.parameters()])?;
+        let rerun_state_logger = logger::RerunLogger::new(&config, &maze, vec![quad.parameters()])?;
         Some(rerun_state_logger)
     } else {
         env_logger::builder()
@@ -146,8 +140,7 @@ async fn main() -> Result<(), SimulationError> {
                 logger.log(
                     time,
                     quad_state.clone(),
-                    maze.clone(),
-                    &mut camera,
+                    &maze,
                     logger::DesiredState {
                         position: desired_position,
                         velocity: desired_velocity,
