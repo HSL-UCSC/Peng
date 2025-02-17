@@ -7,10 +7,13 @@ use crate::{SimulationError, Trajectory};
 use colored::Colorize;
 use nalgebra::{Matrix3, Rotation3, UnitQuaternion, Vector3};
 use rayon::prelude::*;
-use rerun::RecordingStream;
+use rerun::{RecordingStream, RecordingStreamBuilder};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::{mpsc, watch::Sender};
+
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum LogLevel {
@@ -81,12 +84,14 @@ macro_rules! debug {
     };
 }
 
+#[derive(Debug, Default)]
 pub struct DesiredState {
     pub position: Vector3<f32>,
     pub velocity: Vector3<f32>,
     pub orientation: UnitQuaternion<f32>,
 }
 
+#[derive(Debug, Default)]
 pub struct ControlOutput {
     pub thrust: f32,
     pub torque: Vector3<f32>,
@@ -95,144 +100,185 @@ pub struct ControlOutput {
     pub torque_out: Vector3<f32>,
 }
 
-// #[derive(Clone)]
-pub struct RerunLogger<'a> {
-    pub tx: tokio::sync::mpsc::Sender<String>,
-    rec: Arc<RecordingStream>,
-    config: &'a config::Config,
-    trajectory_map: std::collections::HashMap<String, Trajectory>,
-    camera: Camera,
+/// Struct to represent a log message
+// #[derive(Debug)]
+struct LogMessage {
+    time: f32,
+    quad_state: QuadrotorState,
+    desired_state: DesiredState,
+    control_out: ControlOutput,
 }
 
-impl<'a> RerunLogger<'a> {
+pub struct RerunLogger {
+    tx: tokio::sync::mpsc::Sender<LogMessage>,
+    trajectory_map: Arc<Mutex<HashMap<String, Trajectory>>>,
+    pub handle: tokio::task::JoinHandle<()>,
+}
+
+impl RerunLogger {
+    /// Creates a new RerunLogger and spawns the logging thread
     pub fn new(
-        config: &'a config::Config,
-        maze: &Maze,
-        quadrotors: Vec<crate::config::QuadrotorConfig>,
+        config: config::Config,
+        mut maze_watch: tokio::sync::watch::Receiver<Maze>,
+        quadrotor_ids: Vec<String>,
     ) -> Result<Self, SimulationError> {
-        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let (tx, mut rx) = mpsc::channel::<LogMessage>(100);
 
-        let rec = rerun::RecordingStreamBuilder::new("Peng").spawn()?;
-        rerun::Logger::new(rec.clone())
-            .with_path_prefix("logs")
-            .with_filter(rerun::default_log_filter())
-            .init()
-            .expect("error starting rerun");
-        rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)?;
-        rec.set_time_seconds("timestamp", 0);
-        log_maze_tube(&rec, maze)?;
-        log_maze_obstacles(&rec, maze)?;
-        let mut trajectory_map = std::collections::HashMap::<String, Trajectory>::new();
-        quadrotors.iter().for_each(|quad| {
-            // let id = match quad {
-            //     config::QuadrotorConfigurations::Peng(c) => c.id.clone(),
-            //     config::QuadrotorConfigurations::Liftoff(c) => c.id.clone(),
-            //     config::QuadrotorConfigurations::Betaflight(c) => c.quadrotor_config.id.clone(),
-            // };
-            let trajectory = Trajectory::new(Vector3::new(0.0, 0.0, 0.0));
-            trajectory_map.insert(quad.id.clone(), trajectory);
-        });
+        // Initialize trajectory map
+        let trajectory_map = Arc::new(Mutex::new(HashMap::new()));
+        {
+            let mut map = trajectory_map.lock().unwrap();
+            for quad_id in quadrotor_ids {
+                let trajectory = Trajectory::new(Vector3::new(0.0, 0.0, 0.0));
+                map.insert(quad_id, trajectory);
+            }
+        }
 
-        let camera = Camera::new(
-            config.camera.resolution,
-            config.camera.fov_vertical.to_radians(),
-            config.camera.near,
-            config.camera.far,
-        );
+        // Spawn the logging thread
+        let trajectory_map_clone = Arc::clone(&trajectory_map);
+        // let camera_clone = camera.clone();
 
-        tokio::spawn(async move {
+        // let maze_watch = maze_watch.clone();
+        let handle = tokio::spawn(async move {
+            // Initialize the Rerun logging stream
+            let rec = RecordingStreamBuilder::new("Peng")
+                .spawn()
+                .expect("failed to spawn rerun");
+            rerun::Logger::new(rec.clone())
+                .with_path_prefix("logs")
+                .with_filter(rerun::default_log_filter())
+                .init()
+                .expect("error starting rerun");
+            println!("Rerun logger started");
+
+            rec.log_file_from_path(config.rerun_blueprint.clone(), None, false)
+                .expect("failed to log file from path");
+            rec.set_time_seconds("timestamp", 0);
+
+            let maze = maze_watch.borrow().clone();
+            log_maze_tube(&rec, &maze).expect("failed to log maze tube");
+            log_maze_obstacles(&rec, &maze).expect("failed to log maze obstacles");
+
+            let mut camera = Camera::new(
+                config.camera.resolution,
+                config.camera.fov_vertical.to_radians(),
+                config.camera.near,
+                config.camera.far,
+            );
+
+            // let mut maze_watch = maze_watch.clone();
             loop {
-                if let Some(message) = rx.recv().await {
-                    println!("Received: {}", message);
-                } else {
-                    // Exit if the channel is closed and all senders are dropped
-                    println!("All senders have been dropped. Exiting receiver loop.");
-                    break;
+                tokio::select! {
+                    _ = maze_watch.changed() => {
+                        let maze = maze_watch.borrow().clone();
+                        log_maze_obstacles(&rec, &maze).expect("failed to log maze");
+                    }
+                    Some(message) = rx.recv() => {
+                        // Perform logging operations
+                        // let rec: &RecordingStream = &rec;
+                        rec.set_time_seconds("timestamp", message.time);
+                        let mut rerun_quad_state = message.quad_state.clone();
+
+                        match config.quadrotor.clone() {
+                            config::QuadrotorConfigurations::Peng(_) => (),
+                            config::QuadrotorConfigurations::Liftoff(_) => {
+                                rerun_quad_state.position = Vector3::new(
+                                    message.quad_state.position.x,
+                                    -message.quad_state.position.y,
+                                    message.quad_state.position.z,
+                                );
+                            }
+                            config::QuadrotorConfigurations::Betaflight(_) => {
+                                rerun_quad_state.position = Vector3::new(
+                                    message.quad_state.position.x,
+                                    message.quad_state.position.y,
+                                    message.quad_state.position.z,
+                                );
+                            }
+                        };
+
+                        // Log trajectory data
+                        if let Some(trajectory) = trajectory_map_clone.lock().unwrap().get_mut("PengQuad") {
+                            trajectory.add_point(message.quad_state.position);
+                            log_trajectory(&rec, trajectory).unwrap();
+                        }
+
+                        // Log other quadrotor data
+                        let euler_d = message.desired_state.orientation.euler_angles();
+                        log_data(
+                            &rec,
+                            &rerun_quad_state,
+                            &message.desired_state.position,
+                            &Vector3::new(euler_d.0, euler_d.1, euler_d.2),
+                            &message.desired_state.velocity,
+                            &message.control_out.torque,
+                        )
+                        .unwrap();
+
+                        log_control(
+                            &rec,
+                            message.control_out.thrust,
+                            message.control_out.torque,
+                            Some((
+                                message.control_out.thrust_out,
+                                message.control_out.torque_out,
+                            )),
+                        )
+                        .unwrap();
+
+                        // let maze = maze_watch.borrow().clone();
+                        // Render and log depth images if enabled
+                        if config.render_depth {
+                            log_depth_image(&rec, &camera, config.use_multithreading_depth_rendering)
+                                .unwrap();
+                            log_pinhole_depth(
+                                &rec,
+                                &camera,
+                                rerun_quad_state.position,
+                                rerun_quad_state.orientation,
+                                config.camera.rotation_transform,
+                            )
+                            .unwrap();
+
+                            // TODO: only if ego vehicle
+                            let maze = maze_watch.borrow().clone();
+                            camera
+                                .render_depth(
+                                    &message.quad_state.position,
+                                    &message.quad_state.orientation,
+                                    &maze,
+                                    config.use_multithreading_depth_rendering,
+                                )
+                                .expect("failed to render depth");
+                        }
+                    }
                 }
             }
         });
-        // let rc = rec.clone();
+
         Ok(Self {
             tx,
-            // rx,
-            config,
-            rec: Arc::new(rec),
             trajectory_map,
-            camera,
+            handle,
         })
     }
 
+    /// Sends log data to the logging thread
     pub fn log(
-        &mut self,
+        &self,
         time: f32,
         quad_state: QuadrotorState,
-        maze: &Maze,
         desired_state: DesiredState,
         control_out: ControlOutput,
     ) -> Result<(), SimulationError> {
-        let rec = &self.rec;
-        rec.set_time_seconds("timestamp", time);
-        let mut rerun_quad_state = quad_state.clone();
-        match self.config.quadrotor.clone() {
-            config::QuadrotorConfigurations::Peng(_) => (),
-            config::QuadrotorConfigurations::Liftoff(_) => {
-                rerun_quad_state.position = Vector3::new(
-                    quad_state.position.x,
-                    -quad_state.position.y,
-                    quad_state.position.z,
-                );
-            }
-            config::QuadrotorConfigurations::Betaflight(_) => {
-                rerun_quad_state.position = Vector3::new(
-                    quad_state.position.x,
-                    quad_state.position.y,
-                    quad_state.position.z,
-                );
-            }
+        let log_message = LogMessage {
+            time,
+            quad_state,
+            desired_state,
+            control_out,
         };
-        // let mut trajectory = self.trajectory_map.get("").as_ref();
-        if let Some(trajectory) = self.trajectory_map.get_mut("PengQuad") {
-            trajectory.add_point(quad_state.position);
-            log_trajectory(rec, trajectory)?;
-        }
 
-        let euler_d = desired_state.orientation.euler_angles();
-        log_data(
-            rec,
-            &rerun_quad_state,
-            &desired_state.position,
-            &Vector3::new(euler_d.0, euler_d.1, euler_d.2),
-            &desired_state.velocity,
-            &control_out.torque,
-        )?;
-        log_control(
-            rec,
-            control_out.thrust,
-            control_out.torque,
-            Some((control_out.thrust_out, control_out.torque_out)),
-        )?;
-        if self.config.render_depth {
-            log_depth_image(
-                rec,
-                &self.camera,
-                self.config.use_multithreading_depth_rendering,
-            )?;
-            log_pinhole_depth(
-                rec,
-                &self.camera,
-                rerun_quad_state.position,
-                rerun_quad_state.orientation,
-                self.config.camera.rotation_transform,
-            )?;
-            // TODO: Render depth only for ego vehicle
-            self.camera.render_depth(
-                &quad_state.position,
-                &quad_state.orientation,
-                &maze,
-                self.config.use_multithreading_depth_rendering,
-            )?;
-        }
-        log_maze_obstacles(rec, &maze)?;
+        self.tx.try_send(log_message).ok(); // Non-blocking send
         Ok(())
     }
 }
@@ -394,6 +440,7 @@ pub fn log_maze_obstacles(
     rec: &rerun::RecordingStream,
     maze: &Maze,
 ) -> Result<(), SimulationError> {
+    println!("Maze Log: {:?}", maze);
     let (positions, radii): (Vec<(f32, f32, f32)>, Vec<f32>) = maze
         .obstacles
         .iter()
