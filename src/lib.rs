@@ -43,9 +43,10 @@
 //! let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
 //! let quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
 //! ```
-use quadrotor::State;
+pub mod betaflight_quad;
 pub mod config;
 pub mod environment;
+pub mod liftoff_quad;
 pub mod logger;
 pub mod quadrotor;
 pub mod sensors;
@@ -54,7 +55,7 @@ pub mod sync;
 use environment::Maze;
 use environment::Obstacle;
 use nalgebra::{Matrix3, Quaternion, Rotation3, SMatrix, UnitQuaternion, Vector3};
-use quadrotor::{QuadrotorInterface, QuadrotorState};
+use quadrotor::{QuadrotorInterface, QuadrotorState, State};
 use sensors::Imu;
 use std::f32::consts::PI;
 
