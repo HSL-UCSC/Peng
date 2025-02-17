@@ -1,0 +1,17 @@
+{
+      "version": "2.0.0",
+      "tasks": [
+          {
+              "label": "build-in-nix",
+              "type": "shell",
+              "command": "nix develop --command cargo build",
+              "group": {
+                  "kind": "build",
+                  "isDefault": true
+              },
+              "presentation": {
+                  "reveal": "silent"
+              }
+          }
+      ]
+}
