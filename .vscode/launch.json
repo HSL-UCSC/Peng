@@ -24,6 +24,9 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'peng_quad'",
+            "env": {
+                "RUSTFLAGS": "-C debuginfo=2 -C opt-level=0" 
+            },
             "cargo": {
                 "args": [
                     "build",
