@@ -1,26 +1,22 @@
 mod betaflight_quad;
 mod liftoff_quad;
 mod logger;
-mod quadrotor_factory;
+// mod quadrotor_factory;
+mod sync;
 
-use logger::ControlOutput;
-use logger::DesiredState;
 use logger::RerunLogger;
 use nalgebra::Vector3;
 use peng_quad::environment::Maze;
 use peng_quad::*;
-use quadrotor::QuadrotorState;
 use rerun::external::log;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use std::time::Instant;
-use std::{
-    borrow::Borrow,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
-    },
-};
-use tokio::sync::{Barrier, Mutex, Notify};
+use sync::WorkerSync;
+use tokio::sync::Barrier;
 
 #[tokio::main]
 /// Main function for the simulation
@@ -53,7 +49,6 @@ async fn main() -> Result<(), SimulationError> {
 
     // TODO: num workers for barriers
     let worker_sync = Arc::new(WorkerSync {
-        notify: Arc::new(Notify::new()), // Notification system for signaling
         clock: Arc::new(AtomicU64::new(0)), // Shared atomic clock/tick counter
         start_barrier: Arc::new(Barrier::new(3)), // Synchronize thread start
         end_barrier: Arc::new(Barrier::new(3)), // Synchronize thread end
@@ -66,8 +61,9 @@ async fn main() -> Result<(), SimulationError> {
         // Set up Rerun
         // Note, the value of maze passed in is only used for the initial drawing of rerun.
         // Subsequent maze updates are processed on a maze watch channel
+        let log_sync_clone = Arc::clone(&worker_sync);
         let (rerun_handle, rerun_logger) =
-            logger::RerunLogger::new(config.clone(), rx_maze.clone(), ids)?;
+            logger::RerunLogger::new(config.clone(), rx_maze.clone(), ids, log_sync_clone)?;
         (Some(rerun_handle), Some(rerun_logger))
     } else {
         env_logger::builder()
@@ -122,19 +118,12 @@ async fn main() -> Result<(), SimulationError> {
     log::logger().flush();
     clock_handle.await.expect("failed to await clock handle");
     maze_handle.await.expect("failed to await maze handle");
+    quad_handle.await.expect("failed to await quad handle");
     rerun_handle
         .unwrap()
         .await
         .expect("failed to await rerun handle");
     Ok(())
-}
-
-struct WorkerSync {
-    notify: Arc<Notify>,
-    clock: Arc<AtomicU64>,
-    start_barrier: Arc<Barrier>,
-    end_barrier: Arc<Barrier>,
-    kill: Arc<AtomicBool>,
 }
 
 fn quadrotor_worker(
@@ -143,11 +132,11 @@ fn quadrotor_worker(
     sync: Arc<WorkerSync>,
     rerun_logger: RerunLogger,
     maze_watch: tokio::sync::watch::Receiver<Maze>,
-) -> Result<(), SimulationError> {
+) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let (mut quad, mass) =
-            quadrotor_factory::build_quadrotor(&config).expect("failed to build quadrotor");
+            quadrotor::build_quadrotor(&config).expect("failed to build quadrotor");
         let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
         let planner_config: Vec<PlannerStepConfig> = config
             .planner_schedule
@@ -257,7 +246,7 @@ fn quadrotor_worker(
             sync.end_barrier.wait().await;
         }
     });
-    Ok(())
+    Ok(handle)
 }
 
 fn clock_handle(
