@@ -1,9 +1,9 @@
+use crate::config::{LiftoffQuadrotorConfig, SimulationConfig};
+use crate::quadrotor::{QuadrotorInterface, QuadrotorState, State};
+use crate::SimulationError;
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
 use nalgebra::{Matrix4, Quaternion, UnitQuaternion, Vector3};
-use peng_quad::config::{LiftoffQuadrotorConfig, SimulationConfig};
-use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState, State};
-use peng_quad::SimulationError;
 use tokio::sync::watch;
 use tokio::time::Duration;
 
@@ -284,8 +284,8 @@ impl QuadrotorInterface for LiftoffQuad {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
 
-    fn parameters(&self) -> peng_quad::config::QuadrotorConfig {
-        peng_quad::config::QuadrotorConfig {
+    fn parameters(&self) -> crate::config::QuadrotorConfig {
+        crate::config::QuadrotorConfig {
             id: self.config.id.clone(),
             mass: self.config.mass,
             max_thrust_kg: self.config.max_thrust_kg,

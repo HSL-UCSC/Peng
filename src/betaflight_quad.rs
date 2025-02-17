@@ -1,9 +1,9 @@
 #![allow(clippy::all, dead_code, unused_variables)]
+use crate::config;
+use crate::quadrotor::{QuadrotorInterface, QuadrotorState};
+use crate::SimulationError;
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
-use peng_quad::config;
-use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
-use peng_quad::SimulationError;
 use std::time::Duration;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
@@ -279,8 +279,8 @@ impl QuadrotorInterface for BetaflightQuad {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
 
-    fn parameters(&self) -> peng_quad::config::QuadrotorConfig {
-        peng_quad::config::QuadrotorConfig {
+    fn parameters(&self) -> crate::config::QuadrotorConfig {
+        crate::config::QuadrotorConfig {
             id: self.config.id.clone(),
             mass: self.config.quadrotor_config.mass,
             max_thrust_kg: self.config.quadrotor_config.max_thrust_kg,
