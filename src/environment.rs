@@ -9,7 +9,7 @@ use rand_chacha::ChaCha8Rng;
 /// use nalgebra::Vector3;
 /// let obstacle = Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Obstacle {
     /// The position of the obstacle
     pub position: Vector3<f32>,
@@ -59,7 +59,7 @@ impl Obstacle {
 ///     rng: ChaCha8Rng::from_entropy(),
 /// };
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Maze {
     /// The lower bounds of the maze in the x, y, and z directions
     pub lower_bounds: [f32; 3],

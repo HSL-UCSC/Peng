@@ -46,7 +46,7 @@ impl DerefMut for QuadrotorState {
 
 /// Types implementing this trait can be used as a quadrotor in the simulation.
 /// The underlying model can be internal or external to the simulator.
-pub trait QuadrotorInterface {
+pub trait QuadrotorInterface: Send {
     fn control(
         &mut self,
         step_number: usize,

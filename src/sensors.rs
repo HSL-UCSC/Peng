@@ -141,7 +141,7 @@ impl Imu {
 /// use peng_quad::sensors::Camera;
 /// let camera = Camera::new((800, 600), 60.0, 0.1, 100.0);
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Camera {
     /// The resolution of the camera
     pub resolution: (usize, usize),
