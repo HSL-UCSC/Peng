@@ -49,6 +49,7 @@ pub mod environment;
 pub mod logger;
 pub mod quadrotor;
 pub mod sensors;
+pub mod sync;
 
 use environment::Maze;
 use environment::Obstacle;
