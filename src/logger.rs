@@ -112,7 +112,6 @@ struct LogMessage {
 pub struct RerunLogger {
     tx: tokio::sync::mpsc::Sender<LogMessage>,
     trajectory_map: Arc<Mutex<HashMap<String, Trajectory>>>,
-    pub handle: tokio::task::JoinHandle<()>,
 }
 
 impl RerunLogger {
@@ -121,7 +120,7 @@ impl RerunLogger {
         config: config::Config,
         mut maze_watch: tokio::sync::watch::Receiver<Maze>,
         quadrotor_ids: Vec<String>,
-    ) -> Result<Self, SimulationError> {
+    ) -> Result<(tokio::task::JoinHandle<()>, Self), SimulationError> {
         let (tx, mut rx) = mpsc::channel::<LogMessage>(100);
 
         // Initialize trajectory map
@@ -165,12 +164,13 @@ impl RerunLogger {
                 config.camera.near,
                 config.camera.far,
             );
+            println!("Trajectory Map: {:?}", trajectory_map_clone.lock().unwrap());
 
-            // let mut maze_watch = maze_watch.clone();
             loop {
                 tokio::select! {
                     _ = maze_watch.changed() => {
                         let maze = maze_watch.borrow().clone();
+                        rec.set_time_seconds("timestamp", maze.t);
                         log_maze_obstacles(&rec, &maze).expect("failed to log maze");
                     }
                     Some(message) = rx.recv() => {
@@ -198,7 +198,7 @@ impl RerunLogger {
                         };
 
                         // Log trajectory data
-                        if let Some(trajectory) = trajectory_map_clone.lock().unwrap().get_mut("PengQuad") {
+                        if let Some(trajectory) = trajectory_map_clone.lock().unwrap().get_mut("Peng") {
                             trajectory.add_point(message.quad_state.position);
                             log_trajectory(&rec, trajectory).unwrap();
                         }
@@ -256,11 +256,7 @@ impl RerunLogger {
             }
         });
 
-        Ok(Self {
-            tx,
-            trajectory_map,
-            handle,
-        })
+        Ok((handle, Self { tx, trajectory_map }))
     }
 
     /// Sends log data to the logging thread
@@ -440,7 +436,6 @@ pub fn log_maze_obstacles(
     rec: &rerun::RecordingStream,
     maze: &Maze,
 ) -> Result<(), SimulationError> {
-    println!("Maze Log: {:?}", maze);
     let (positions, radii): (Vec<(f32, f32, f32)>, Vec<f32>) = maze
         .obstacles
         .iter()
