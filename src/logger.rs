@@ -3,6 +3,7 @@ use crate::config::{self};
 use crate::environment::Maze;
 use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
+use crate::sync::WorkerSync;
 use crate::{SimulationError, Trajectory};
 use colored::Colorize;
 use nalgebra::{Matrix3, Rotation3, UnitQuaternion, Vector3};
@@ -120,6 +121,7 @@ impl RerunLogger {
         config: config::Config,
         mut maze_watch: tokio::sync::watch::Receiver<Maze>,
         quadrotor_ids: Vec<String>,
+        worker_sync: Arc<WorkerSync>,
     ) -> Result<(tokio::task::JoinHandle<()>, Self), SimulationError> {
         let (tx, mut rx) = mpsc::channel::<LogMessage>(100);
 
@@ -167,6 +169,9 @@ impl RerunLogger {
             println!("Trajectory Map: {:?}", trajectory_map_clone.lock().unwrap());
 
             loop {
+                if worker_sync.kill.load(Ordering::Relaxed) {
+                    break;
+                }
                 tokio::select! {
                     _ = maze_watch.changed() => {
                         let maze = maze_watch.borrow().clone();
@@ -254,6 +259,7 @@ impl RerunLogger {
                     }
                 }
             }
+            drop(rec);
         });
 
         Ok((handle, Self { tx, trajectory_map }))
