@@ -1,0 +1,79 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'peng_quad'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=peng_quad"
+                ],
+                "filter": {
+                    "name": "peng_quad",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'peng_quad'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=peng_quad",
+                    "--package=peng_quad"
+                ],
+                "filter": {
+                    "name": "peng_quad",
+                    "kind": "bin"
+                }
+            },
+            "terminal": "integrated",
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'peng_quad'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=peng_quad",
+                    "--package=peng_quad"
+                ],
+                "filter": {
+                    "name": "peng_quad",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ],
+    "tasks": {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "build-in-nix",
+                "type": "shell",
+                "command": "nix develop",
+                "group": {
+                    "kind": "build",
+                    "isDefault": true
+                },
+                "presentation": {
+                    "reveal": "silent"
+                }
+            }
+        ]
+    }
+}
