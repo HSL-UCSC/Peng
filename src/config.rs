@@ -8,7 +8,7 @@ use nalgebra::Matrix3;
 
 use crate::SimulationError;
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the simulation
 pub struct Config {
     /// Simulation configuration
@@ -35,13 +35,11 @@ pub struct Config {
     pub render_depth: bool,
     /// MultiThreading depth rendering
     pub use_multithreading_depth_rendering: bool,
-    /// Run the simulation in real time mode
-    pub real_time: bool,
     /// Angle limits
     pub angle_limits: Option<Vec<f32>>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for a planner step
 pub struct PlannerStep {
     /// Step number that the planner should be executed (Unit: ms)
@@ -69,6 +67,8 @@ pub struct SimulationConfig {
     pub use_rk4_for_dynamics_control: bool,
     /// Use RK4 for updating quadrotor dynamics without controls
     pub use_rk4_for_dynamics_update: bool,
+    /// Run the simulation in real time mode
+    pub real_time: bool,
 }
 
 impl Default for SimulationConfig {
@@ -81,6 +81,7 @@ impl Default for SimulationConfig {
             duration: 70.0,
             use_rk4_for_dynamics_control: false,
             use_rk4_for_dynamics_update: false,
+            real_time: false,
         }
     }
 }
@@ -92,6 +93,18 @@ pub enum QuadrotorConfigurations {
     Peng(QuadrotorConfig),
     Liftoff(LiftoffQuadrotorConfig),
     Betaflight(Betaflight),
+}
+
+impl QuadrotorConfigurations {
+    pub fn get_id(&self) -> String {
+        match self {
+            QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config.id.clone(),
+            QuadrotorConfigurations::Liftoff(liftoff_quadrotor_config) => {
+                liftoff_quadrotor_config.id.clone()
+            }
+            QuadrotorConfigurations::Betaflight(betaflight) => betaflight.id.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -225,7 +238,7 @@ impl Betaflight {
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the PID controller
 pub struct PIDControllerConfig {
     /// Position gains
@@ -262,7 +275,7 @@ pub struct ImuConfig {
     pub gyro_bias_std: f32,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the maze
 pub struct MazeConfig {
     /// Upper bounds of the maze in meters (x, y, z)
@@ -277,7 +290,7 @@ pub struct MazeConfig {
     pub obstacles_radius_bounds: [f32; 2],
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the camera
 pub struct CameraConfig {
     /// Camera resolution in pixels (width, height)
@@ -292,7 +305,7 @@ pub struct CameraConfig {
     pub rotation_transform: [f32; 9],
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the mesh
 pub struct MeshConfig {
     /// Division of the 2D mesh, the mesh will be division x division squares
