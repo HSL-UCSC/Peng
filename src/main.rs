@@ -55,28 +55,26 @@ async fn main() -> Result<(), SimulationError> {
     let worker_sync = Arc::new(WorkerSync {
         notify: Arc::new(Notify::new()), // Notification system for signaling
         clock: Arc::new(AtomicU64::new(0)), // Shared atomic clock/tick counter
-        start_barrier: Arc::new(Barrier::new(1)), // Synchronize thread start
-        end_barrier: Arc::new(Barrier::new(1)), // Synchronize thread end
+        start_barrier: Arc::new(Barrier::new(3)), // Synchronize thread start
+        end_barrier: Arc::new(Barrier::new(3)), // Synchronize thread end
         kill: Arc::new(AtomicBool::new(false)), // Graceful shutdown flag
     });
 
     // Configure logger
-    println!("Before rerun spawn");
-    let rerun_handle = if config.use_rerun {
+    let (rerun_handle, rerun_logger) = if config.use_rerun {
         let ids = vec![config.quadrotor.get_id()];
         // Set up Rerun
         // Note, the value of maze passed in is only used for the initial drawing of rerun.
         // Subsequent maze updates are processed on a maze watch channel
-        let rerun_state_logger = logger::RerunLogger::new(config.clone(), rx_maze, ids)?;
-        println!("Out");
-        Some(rerun_state_logger)
+        let (rerun_handle, rerun_logger) =
+            logger::RerunLogger::new(config.clone(), rx_maze.clone(), ids)?;
+        (Some(rerun_handle), Some(rerun_logger))
     } else {
         env_logger::builder()
             .parse_env(env_logger::Env::default().default_filter_or("debug"))
             .init();
-        None
+        (None, None)
     };
-    println!("After rerun spawn");
 
     let maze_sync_clone = Arc::clone(&worker_sync);
     let maze_handle = maze_worker(
@@ -97,30 +95,22 @@ async fn main() -> Result<(), SimulationError> {
 
     let clock_sync = Arc::clone(&worker_sync);
     let clock_handle = clock_handle(config.simulation.clone(), clock_sync);
-    // loop {
-    //     if start_time.elapsed() >= Duration::new(5, 0) {
-    //         let _ = quad.observe(time_step);
-    //         break; // Exit the loop after 3 seconds
-    //     }
-    // }
-
     loop {
-        // If real-time mode is enabled, sleep until the next frame simulation frame
-        // worker_sync.start_barrier.wait().await;
-        if (&config.simulation).real_time {
-            tokio::time::sleep_until(next_frame).await;
-            next_frame += frame_time;
+        if start_time.elapsed() >= Duration::new(5, 0) {
+            break; // Exit the loop after 3 seconds
         }
-        // worker_sync.end_barrier.wait().await;
+    }
 
-        // if let Some(rerun) = &rerun_handle {
-        //     _ = rerun.log(
-        //         start_time.elapsed().as_secs_f32(),
-        //         QuadrotorState::default(),
-        //         DesiredState::default(),
-        //         ControlOutput::default(),
-        //     );
-        // };
+    let quad_handle = quadrotor_worker(
+        0,
+        config.clone(),
+        Arc::clone(&worker_sync),
+        rerun_logger.unwrap(),
+        rx_maze.clone(),
+    )?;
+
+    // TODO: just sleep in main thread for simulation duration?
+    loop {
         if start_time.elapsed() >= std::time::Duration::from_secs_f32((&config.simulation).duration)
         {
             log::info!("Complete Simulation");
@@ -128,14 +118,14 @@ async fn main() -> Result<(), SimulationError> {
         }
     }
 
-    println!("here....");
     worker_sync.kill.store(true, Ordering::Relaxed);
     log::logger().flush();
     clock_handle.await.expect("failed to await clock handle");
     maze_handle.await.expect("failed to await maze handle");
-    if let Some(rerun) = rerun_handle {
-        rerun.handle.await.expect("failed to await rerun handle");
-    };
+    rerun_handle
+        .unwrap()
+        .await
+        .expect("failed to await rerun handle");
     Ok(())
 }
 
@@ -150,9 +140,9 @@ struct WorkerSync {
 fn quadrotor_worker(
     id: usize,
     config: config::Config,
-    sync: WorkerSync,
+    sync: Arc<WorkerSync>,
     rerun_logger: RerunLogger,
-    maze_watch: tokio::sync::watch::Receiver<Arc<Mutex<Maze>>>,
+    maze_watch: tokio::sync::watch::Receiver<Maze>,
 ) -> Result<(), SimulationError> {
     let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
     tokio::spawn(async move {
@@ -182,20 +172,19 @@ fn quadrotor_worker(
             mass,
             config.simulation.gravity,
         );
-        let quad_state = quad
+        let mut quad_state = quad
             .observe(0_f32)
             .expect("error getting latest state estimate");
+
         while !sync.kill.load(Ordering::Relaxed) {
             sync.start_barrier.wait().await;
-            sync.notify.notified().await;
+            // sync.notify.notified().await;
             let step = sync.clock.load(Ordering::Relaxed);
 
             // Do simulation and control here
 
             let time = simulation_period * step as f32;
-            let latest_maze = maze_watch.borrow().clone();
-            let mut maze = latest_maze.lock().await;
-            // maze.update_obstacles(simulation_period);
+            let maze = maze_watch.borrow().clone();
             update_planner(
                 &mut planner_manager,
                 step as usize,
@@ -215,13 +204,14 @@ fn quadrotor_worker(
                     &maze.obstacles,
                 )
                 .expect("failed to calculate inner loop control");
+
             let (thrust, desired_orientation) = controller.compute_position_control(
                 &desired_position,
                 &desired_velocity,
                 desired_yaw,
                 &quad_state.position,
                 &quad_state.velocity,
-                simulation_period,
+                simulation_period * 10.0,
             );
 
             let torque = controller.compute_attitude_control(
@@ -238,16 +228,17 @@ fn quadrotor_worker(
                 Some(values) => values,
                 None => (0_f32, Vector3::<f32>::zeros()),
             };
-            let quad_state = quad
-                .observe(step as f32)
+            quad_state = quad
+                .observe(simulation_period)
                 .expect("error getting latest state estimate");
+
             if (step as usize)
                 % (config.simulation.simulation_frequency / config.simulation.log_frequency)
                 == 0
             {
                 rerun_logger
                     .log(
-                        simulation_period,
+                        time,
                         quad_state.clone(),
                         logger::DesiredState {
                             position: desired_position,
@@ -275,29 +266,33 @@ fn clock_handle(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let sim_duration = config.duration;
-        let start_time = Instant::now();
+        let start_time = tokio::time::Instant::now();
         let period = 1_f64 / (config.simulation_frequency as f64);
-        let period_duration = std::time::Duration::from_secs_f64(period);
+        let period_duration = tokio::time::Duration::from_secs_f64(period);
         let mut next_frame = tokio::time::Instant::now();
 
         while !sync.kill.load(Ordering::Relaxed) {
-            // sync.start_barrier.wait().await;
-            sync.clock.fetch_add(1, Ordering::Relaxed);
-            // Notify worker tasks
-            sync.notify.notify_waiters();
-
-            // Sleep for the tick interval
-            if config.real_time {
-                tokio::time::sleep_until(next_frame).await;
-                next_frame += period_duration;
+            sync.start_barrier.wait().await;
+            let now = tokio::time::Instant::now(); // Capture actual start time
+            if now > next_frame + tokio::time::Duration::from_millis(1) {
+                let lag = now.duration_since(next_frame);
+                log::debug!(
+                    "[WARNING] Running behind schedule! Lag: {:.3} ms",
+                    lag.as_secs_f64()
+                );
             }
 
-            // Stop after simulation time
-            // if start_time.elapsed().as_secs_f32() >= sim_duration {
-            //     sync.kill.store(true, Ordering::Relaxed);
-            //     sync.notify.notify_waiters(); // Ensure workers wake up to exit
-            // }
-            // sync.end_barrier.wait().await;
+            sync.clock.fetch_add(1, Ordering::Relaxed);
+            if config.real_time {
+                tokio::time::sleep_until(next_frame).await;
+                next_frame =
+                    start_time + (sync.clock.load(Ordering::Relaxed) as u32 * period_duration);
+            }
+
+            if start_time.elapsed().as_secs_f32() >= sim_duration {
+                sync.kill.store(true, Ordering::Relaxed);
+            }
+            sync.end_barrier.wait().await;
         }
     })
 }
@@ -313,16 +308,15 @@ fn maze_worker(
     let mut maze = maze.clone();
     let handle = tokio::spawn(async move {
         while !sync.kill.load(Ordering::Relaxed) {
-            // sync.start_barrier.wait().await;
-            sync.notify.notified().await;
-            let t = sync.clock.load(Ordering::Relaxed);
+            sync.start_barrier.wait().await;
+            // let t = sync.clock.load(Ordering::Relaxed) * dt;
 
             // Do simulation and control here
             // let maze = tx.borrow().clone();
             // let mut maze_lock = maze.lock().await;
             maze.update_obstacles(dt);
-            _ = tx.send(maze.clone()).expect("failed to send maze");
-            // sync.end_barrier.wait().await;
+            tx.send(maze.clone()).expect("failed to send maze");
+            sync.end_barrier.wait().await;
         }
     });
     Ok(handle)
