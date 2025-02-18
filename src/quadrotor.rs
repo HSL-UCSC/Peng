@@ -1,3 +1,8 @@
+use crate::betaflight_quad::BetaflightQuad;
+use crate::config;
+use crate::config::QuadrotorConfigurations;
+use crate::liftoff_quad::LiftoffQuad;
+use crate::Quadrotor;
 use crate::SimulationError;
 use nalgebra::{UnitQuaternion, Vector3};
 use std::ops::{Deref, DerefMut};
@@ -65,12 +70,6 @@ pub trait QuadrotorInterface: Send {
     // TODO: integrate this into the observe method, add a
     fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError>;
 }
-
-use crate::betaflight_quad::BetaflightQuad;
-use crate::config;
-use crate::config::QuadrotorConfigurations;
-use crate::liftoff_quad::LiftoffQuad;
-use crate::Quadrotor;
 
 pub fn build_quadrotor(
     config: &config::Config,

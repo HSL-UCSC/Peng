@@ -8,11 +8,11 @@ use crate::{SimulationError, Trajectory};
 use colored::Colorize;
 use nalgebra::{Matrix3, Rotation3, UnitQuaternion, Vector3};
 use rayon::prelude::*;
-use rerun::{RecordingStream, RecordingStreamBuilder};
+use rerun::RecordingStreamBuilder;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::{mpsc, watch::Sender};
+use tokio::sync::mpsc;
 
 use std::collections::HashMap;
 
@@ -180,7 +180,6 @@ impl RerunLogger {
                     }
                     Some(message) = rx.recv() => {
                         // Perform logging operations
-                        // let rec: &RecordingStream = &rec;
                         rec.set_time_seconds("timestamp", message.time);
                         let mut rerun_quad_state = message.quad_state.clone();
 
