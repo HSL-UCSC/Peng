@@ -1,8 +1,8 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64},
     Arc,
 };
-use tokio::sync::{Barrier, Mutex, Notify};
+use tokio::sync::Barrier;
 
 pub struct WorkerSync {
     pub clock: Arc<AtomicU64>,

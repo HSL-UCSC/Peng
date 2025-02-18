@@ -8,6 +8,7 @@ use logger::RerunLogger;
 use nalgebra::Vector3;
 use peng_quad::environment::Maze;
 use peng_quad::*;
+use quadrotor::build_quadrotor;
 use rerun::external::log;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -107,8 +108,7 @@ async fn main() -> Result<(), SimulationError> {
 
     // TODO: just sleep in main thread for simulation duration?
     loop {
-        if start_time.elapsed() >= std::time::Duration::from_secs_f32((&config.simulation).duration)
-        {
+        if start_time.elapsed() >= std::time::Duration::from_secs_f32(config.simulation.duration) {
             log::info!("Complete Simulation");
             break;
         }
@@ -135,8 +135,7 @@ fn quadrotor_worker(
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
     let handle = tokio::spawn(async move {
-        let (mut quad, mass) =
-            quadrotor::build_quadrotor(&config).expect("failed to build quadrotor");
+        let (mut quad, mass) = build_quadrotor(&config).expect("failed to build quadrotor");
         let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
         let planner_config: Vec<PlannerStepConfig> = config
             .planner_schedule
@@ -287,7 +286,7 @@ fn clock_handle(
 }
 
 fn maze_worker(
-    id: String,
+    _id: String,
     config: &config::SimulationConfig,
     sync: Arc<WorkerSync>,
     tx: tokio::sync::watch::Sender<Maze>,

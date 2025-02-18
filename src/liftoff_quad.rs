@@ -32,6 +32,7 @@ pub struct LiftoffQuad {
 }
 
 impl LiftoffQuad {
+    #[allow(dead_code)]
     pub fn new(
         simulation_config: SimulationConfig,
         config: LiftoffQuadrotorConfig,
