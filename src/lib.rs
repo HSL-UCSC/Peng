@@ -108,6 +108,8 @@ pub struct Quadrotor {
     pub orientation: UnitQuaternion<f32>,
     /// Current angular velocity of the quadrotor
     pub angular_velocity: Vector3<f32>,
+    /// Initial Position
+    pub initial_position: Vector3<f32>,
     /// Mass of the quadrotor in kg
     pub mass: f32,
     /// Gravitational acceleration in m/s^2
@@ -220,6 +222,7 @@ impl QuadrotorInterface for Quadrotor {
             max_thrust_kg: self.max_thrust(),
             arm_length_m: 0.0,
             yaw_torque_constant: 0.0,
+            initial_position: self.initial_position.into(),
         }
     }
 }
@@ -251,6 +254,7 @@ impl Quadrotor {
     pub fn new(
         time_step: f32,
         config: config::SimulationConfig,
+        quadrotor_config: config::QuadrotorConfig,
         imu_config: config::ImuConfig,
         mass: f32,
         gravity: f32,
@@ -279,6 +283,7 @@ impl Quadrotor {
             acceleration: Vector3::zeros(),
             orientation: UnitQuaternion::identity(),
             angular_velocity: Vector3::zeros(),
+            initial_position: quadrotor_config.initial_position.into(),
             mass,
             gravity,
             time_step,
