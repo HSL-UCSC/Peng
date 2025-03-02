@@ -47,6 +47,7 @@ prost = "0.13.3"
 vicon-sys = { git = "https://github.com/HSL-UCSC/vicon-rs.git", branch = "lnx", optional = true }
 rerun = "0.21.0"
 colored = "2.2.0"
+futures = "0.3.31"
 
 [features]
 vicon = ["dep:vicon-sys"]

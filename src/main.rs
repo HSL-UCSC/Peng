@@ -5,6 +5,7 @@ mod logger;
 mod sync;
 
 use logger::RerunLogger;
+use futures::future::try_join_all;
 use nalgebra::Vector3;
 use peng_quad::environment::Maze;
 use peng_quad::*;
@@ -58,7 +59,7 @@ async fn main() -> Result<(), SimulationError> {
 
     // Configure logger
     let (rerun_handle, rerun_logger) = if config.use_rerun {
-        let ids = vec![config.quadrotor.get_id()];
+        let ids = config.quadrotor.iter().map(|config| config.get_id()).collect();
         // Set up Rerun
         // Note, the value of maze passed in is only used for the initial drawing of rerun.
         // Subsequent maze updates are processed on a maze watch channel
@@ -98,13 +99,21 @@ async fn main() -> Result<(), SimulationError> {
         }
     }
 
-    let quad_handle = quadrotor_worker(
-        0,
-        config.clone(),
-        Arc::clone(&worker_sync),
-        rerun_logger.unwrap(),
-        rx_maze.clone(),
-    )?;
+    let rr = rerun_logger.unwrap();
+    let quad_handles: Vec<tokio::task::JoinHandle<()>> = config
+        .quadrotor
+        .iter()
+        .map(|quadrotor_config| {
+            let quadrotor_sync_clone = Arc::clone(&worker_sync);
+            quadrotor_worker(
+                config.clone(),
+                quadrotor_config.clone(),
+                quadrotor_sync_clone,
+                rr.clone(),
+                rx_maze.clone(),
+            ).unwrap()
+        })
+        .collect();
 
     // TODO: just sleep in main thread for simulation duration?
     loop {
@@ -118,7 +127,7 @@ async fn main() -> Result<(), SimulationError> {
     log::logger().flush();
     clock_handle.await.expect("failed to await clock handle");
     maze_handle.await.expect("failed to await maze handle");
-    quad_handle.await.expect("failed to await quad handle");
+    try_join_all(quad_handles).await.expect("failed to await quadrotor handles");
     rerun_handle
         .unwrap()
         .await
@@ -127,15 +136,16 @@ async fn main() -> Result<(), SimulationError> {
 }
 
 fn quadrotor_worker(
-    id: usize,
     config: config::Config,
+    quadrotor_config: config::QuadrotorConfigurations,
     sync: Arc<WorkerSync>,
     rerun_logger: RerunLogger,
     maze_watch: tokio::sync::watch::Receiver<Maze>,
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
     let handle = tokio::spawn(async move {
-        let (mut quad, mass) = build_quadrotor(&config).expect("failed to build quadrotor");
+        let (mut quad, mass) =
+            build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
         let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
         let planner_config: Vec<PlannerStepConfig> = config
             .planner_schedule
@@ -227,6 +237,7 @@ fn quadrotor_worker(
                 rerun_logger
                     .log(
                         time,
+                        quadrotor_config.clone(),
                         quad_state.clone(),
                         logger::DesiredState {
                             position: desired_position,
