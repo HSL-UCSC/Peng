@@ -73,8 +73,9 @@ pub trait QuadrotorInterface: Send {
 
 pub fn build_quadrotor(
     config: &config::Config,
+    quadrotor_config: &config::QuadrotorConfigurations,
 ) -> Result<(Box<dyn QuadrotorInterface>, f32), SimulationError> {
-    let (quad, mass): (Box<dyn QuadrotorInterface>, f32) = match &config.quadrotor {
+    let (quad, mass): (Box<dyn QuadrotorInterface>, f32) = match &quadrotor_config {
         QuadrotorConfigurations::Peng(quad_config) => (
             Box::new(Quadrotor::new(
                 1.0 / config.simulation.simulation_frequency as f32,

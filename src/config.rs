@@ -8,13 +8,18 @@ use nalgebra::Matrix3;
 
 use crate::SimulationError;
 
+use serde::de::{Deserializer, Error};
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
+
 #[derive(Clone, serde::Deserialize)]
 /// Configuration for the simulation
 pub struct Config {
     /// Simulation configuration
     pub simulation: SimulationConfig,
     /// Quadrotor configuration
-    pub quadrotor: QuadrotorConfigurations,
+    #[serde(default, deserialize_with = "single_or_multiple_quadrotors")]
+    pub quadrotor: Vec<QuadrotorConfigurations>,
     /// PID Controller configuration
     pub pid_controller: PIDControllerConfig,
     /// IMU configuration
@@ -328,13 +333,40 @@ impl Config {
     }
 }
 
+/// Helper function to allow deserializing either a single `QuadrotorConfigurations`
+/// or a list of them into a `Vec<QuadrotorConfigurations>`.
+fn single_or_multiple_quadrotors<'de, D>(
+    deserializer: D,
+) -> Result<Vec<QuadrotorConfigurations>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let parsed: Value = Deserialize::deserialize(deserializer)?;
+
+    match parsed {
+        // If it's a YAML list (sequence), parse as Vec
+        Value::Sequence(seq) => {
+            serde_yaml::from_value(Value::Sequence(seq)).map_err(D::Error::custom)
+        }
+        // If it's a single object (mapping), wrap it in a list
+        Value::Mapping(_) => {
+            serde_yaml::from_value(Value::Sequence(vec![parsed])).map_err(D::Error::custom)
+        }
+        _ => Err(D::Error::custom(
+            "Expected a mapping (object) or a sequence (array)",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn test_base_config() {
         let config = Config::from_yaml("tests/testdata/test_config_base.yaml").unwrap();
-        let quadrotor_config: QuadrotorConfig = match config.quadrotor {
+        assert!(config.quadrotor.len() == 1);
+        let quad_config = config.quadrotor.first().unwrap();
+        let quadrotor_config: QuadrotorConfig = match quad_config.clone() {
             QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config,
             _ => panic!("Failed to load Peng configuration"),
         };
@@ -355,7 +387,9 @@ mod tests {
     #[test]
     fn test_liftoff_config() {
         let config = Config::from_yaml("tests/testdata/test_liftoff_base.yaml").unwrap();
-        let liftoff_config = match config.quadrotor {
+        assert!(config.quadrotor.len() == 1);
+        let quad_config = config.quadrotor.first().unwrap();
+        let liftoff_config = match quad_config {
             QuadrotorConfigurations::Liftoff(liftoff_config) => liftoff_config,
             _ => panic!("Failed to load Liftoff configuration"),
         };
@@ -366,7 +400,9 @@ mod tests {
     fn test_betaflight_config() {
         let config = Config::from_yaml("tests/testdata/test_betaflight_base.yaml")
             .expect("failed to unwrap");
-        let liftoff_config = match config.quadrotor {
+        assert!(config.quadrotor.len() == 1);
+        let quad_config = config.quadrotor.first().unwrap();
+        let liftoff_config = match quad_config {
             QuadrotorConfigurations::Betaflight(liftoff_config) => liftoff_config,
             _ => panic!("Failed to load Liftoff configuration"),
         };

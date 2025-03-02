@@ -105,11 +105,13 @@ pub struct ControlOutput {
 // #[derive(Debug)]
 struct LogMessage {
     time: f32,
+    quad_config: config::QuadrotorConfigurations,
     quad_state: QuadrotorState,
     desired_state: DesiredState,
     control_out: ControlOutput,
 }
 
+#[derive(Clone)]
 pub struct RerunLogger {
     tx: tokio::sync::mpsc::Sender<LogMessage>,
     trajectory_map: Arc<Mutex<HashMap<String, Trajectory>>>,
@@ -183,7 +185,7 @@ impl RerunLogger {
                         rec.set_time_seconds("timestamp", message.time);
                         let mut rerun_quad_state = message.quad_state.clone();
 
-                        match config.quadrotor.clone() {
+                        match message.quad_config.clone() {
                             config::QuadrotorConfigurations::Peng(_) => (),
                             config::QuadrotorConfigurations::Liftoff(_) => {
                                 rerun_quad_state.position = Vector3::new(
@@ -268,12 +270,14 @@ impl RerunLogger {
     pub fn log(
         &self,
         time: f32,
+        quad_config: config::QuadrotorConfigurations,
         quad_state: QuadrotorState,
         desired_state: DesiredState,
         control_out: ControlOutput,
     ) -> Result<(), SimulationError> {
         let log_message = LogMessage {
             time,
+            quad_config,
             quad_state,
             desired_state,
             control_out,
