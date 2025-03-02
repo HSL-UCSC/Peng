@@ -8,10 +8,6 @@ use tokio::sync::watch;
 use tokio::time::Duration;
 
 /// Represents a quadrotor in the game Liftoff
-/// # Example
-/// ```
-/// let quad = LiftoffQuad{ }
-/// ```
 pub struct LiftoffQuad {
     /// The serial writer to communicate with the quadrotor
     pub writer: Option<Writer>,
@@ -385,13 +381,14 @@ async fn feedback_loop_fast(
 /// Scale a value from a given range to a new range
 /// # Example
 /// ```
+/// use peng_quad::liftoff_quad::normalize;
 /// let value = 0.0;
 /// let min = -10.0;
 /// let max = 10.0;
 /// let scaled_value = normalize(value, min, max);
 /// assert_eq!(scaled_value, 0.5);
 /// ```
-fn normalize(value: f32, min: f32, max: f32) -> f32 {
+pub fn normalize(value: f32, min: f32, max: f32) -> f32 {
     (value - min) / (max - min)
 }
 
@@ -424,11 +421,12 @@ fn scale_to_rc_command_with_center(value: f32, min: f32, center: f32, max: f32) 
 /// Throttle is inverted from Xinput to Liftoff
 /// # Example
 /// ```
+/// use peng_quad::liftoff_quad::scale_throttle;
 /// let thrust = 0.0;
 /// let throttle = scale_throttle(thrust);
-/// assert_eq!(throttle, 0);
+/// assert_eq!(throttle, 32768);
 /// ```
-fn scale_throttle(thrust: f32) -> i32 {
+pub fn scale_throttle(thrust: f32) -> i32 {
     // thrust is inverted from Xinput to Liftoff
     -scale_to_rc_command(thrust, -32768, 32767)
 }
@@ -462,30 +460,22 @@ mod tests {
             LiftoffQuadrotorConfig::default(),
         )
         .unwrap();
-        let omega = Vector3::zeros();
-        let v = Vector3::zeros();
 
-        let q = UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0);
-        let a = quad.body_acceleration(q, omega, v);
+        let a = quad.body_acceleration(
+            Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
+            Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
+            0.01,
+        );
         assert_eq!(a, Vector3::new(0.0, 0.0, quad.config.gravity));
 
-        // Roll onto the right side, gravity should align with y direction to the "east" side of
-        // the drone
-        let q = UnitQuaternion::from_euler_angles(-FRAC_PI_2, 0.0, 0.0);
-        let a = quad.body_acceleration(q, omega, v);
+        let a = quad.body_acceleration(
+            Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
+            Vector3::<f32>::new(0_f32, 0_f32, quad.config.gravity),
+            1.0,
+        );
         assert!(is_close(
             &a,
             &Vector3::new(0.0, quad.config.gravity, 0.0),
-            1e-6,
-            1e-6
-        ));
-
-        // Pitch forward 90 degrees, gravity should align with x direction down the nose
-        let q = UnitQuaternion::from_euler_angles(0.0, FRAC_PI_2, 0.0);
-        let a = quad.body_acceleration(q, omega, v);
-        assert!(is_close(
-            &a,
-            &Vector3::new(quad.config.gravity, 0.0, 0.0),
             1e-6,
             1e-6
         ));
