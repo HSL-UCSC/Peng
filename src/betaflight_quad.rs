@@ -276,15 +276,7 @@ impl QuadrotorInterface for BetaflightQuad {
     }
 
     fn parameters(&self) -> crate::config::QuadrotorConfig {
-        crate::config::QuadrotorConfig {
-            id: self.config.id.clone(),
-            mass: self.config.quadrotor_config.mass,
-            max_thrust_kg: self.config.quadrotor_config.max_thrust_kg,
-            drag_coefficient: 0.0,
-            inertia_matrix: self.config.quadrotor_config.inertia_matrix,
-            arm_length_m: self.config.quadrotor_config.arm_length_m,
-            yaw_torque_constant: self.config.quadrotor_config.yaw_torque_constant,
-        }
+        self.config.quadrotor_config.clone()
     }
 }
 

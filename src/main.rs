@@ -4,8 +4,8 @@ mod logger;
 // mod quadrotor_factory;
 mod sync;
 
-use logger::RerunLogger;
 use futures::future::try_join_all;
+use logger::RerunLogger;
 use nalgebra::Vector3;
 use peng_quad::environment::Maze;
 use peng_quad::*;
@@ -59,7 +59,17 @@ async fn main() -> Result<(), SimulationError> {
 
     // Configure logger
     let (rerun_handle, rerun_logger) = if config.use_rerun {
-        let ids = config.quadrotor.iter().map(|config| config.get_id()).collect();
+        let ids: Vec<String> = config
+            .quadrotor
+            .iter()
+            .map(|config| config.get_id())
+            .collect();
+        if ids.iter().any(|id| id.trim().is_empty()) {
+            return Err(SimulationError::OtherError(
+                "quadrotor with no ID".to_string(),
+            ));
+        }
+
         // Set up Rerun
         // Note, the value of maze passed in is only used for the initial drawing of rerun.
         // Subsequent maze updates are processed on a maze watch channel
@@ -111,7 +121,8 @@ async fn main() -> Result<(), SimulationError> {
                 quadrotor_sync_clone,
                 rr.clone(),
                 rx_maze.clone(),
-            ).unwrap()
+            )
+            .unwrap()
         })
         .collect();
 
@@ -127,7 +138,9 @@ async fn main() -> Result<(), SimulationError> {
     log::logger().flush();
     clock_handle.await.expect("failed to await clock handle");
     maze_handle.await.expect("failed to await maze handle");
-    try_join_all(quad_handles).await.expect("failed to await quadrotor handles");
+    try_join_all(quad_handles)
+        .await
+        .expect("failed to await quadrotor handles");
     rerun_handle
         .unwrap()
         .await

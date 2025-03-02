@@ -16,6 +16,7 @@ simulation:
 
 quadrotor:
   type: Betaflight
+  id: "Betaflight"
   quadrotor_config:
     mass: 1.3 # Mass of the quadrotor (kg)
     drag_coefficient: 0.000 # Aerodynamic drag coefficient

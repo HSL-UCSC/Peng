@@ -284,7 +284,7 @@ impl QuadrotorInterface for LiftoffQuad {
     }
 
     fn max_thrust(&self) -> f32 {
-        self.config.max_thrust_kg
+        self.config.quadrotor_config.max_thrust_kg
     }
 
     /// Calculate all maximum torques and return them as a tuple
@@ -300,15 +300,7 @@ impl QuadrotorInterface for LiftoffQuad {
     }
 
     fn parameters(&self) -> crate::config::QuadrotorConfig {
-        crate::config::QuadrotorConfig {
-            id: self.config.id.clone(),
-            mass: self.config.mass,
-            max_thrust_kg: self.config.max_thrust_kg,
-            drag_coefficient: 0.0,
-            inertia_matrix: self.config.inertia_matrix,
-            arm_length_m: self.config.arm_length_m,
-            yaw_torque_constant: self.config.yaw_torque_constant,
-        }
+        self.config.quadrotor_config.clone()
     }
 }
 
@@ -466,18 +458,13 @@ mod tests {
             Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
             0.01,
         );
-        assert_eq!(a, Vector3::new(0.0, 0.0, quad.config.gravity));
+        assert_eq!(a, Vector3::new(0.0, 0.0, 9.81));
 
         let a = quad.body_acceleration(
             Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
-            Vector3::<f32>::new(0_f32, 0_f32, quad.config.gravity),
+            Vector3::<f32>::new(0_f32, 0_f32, 9.81),
             1.0,
         );
-        assert!(is_close(
-            &a,
-            &Vector3::new(0.0, quad.config.gravity, 0.0),
-            1e-6,
-            1e-6
-        ));
+        assert!(is_close(&a, &Vector3::new(0.0, 0.0, -9.81), 1e-6, 1e-6));
     }
 }

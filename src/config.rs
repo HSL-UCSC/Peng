@@ -104,10 +104,8 @@ impl QuadrotorConfigurations {
     pub fn get_id(&self) -> String {
         match self {
             QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config.id.clone(),
-            QuadrotorConfigurations::Liftoff(liftoff_quadrotor_config) => {
-                liftoff_quadrotor_config.id.clone()
-            }
-            QuadrotorConfigurations::Betaflight(betaflight) => betaflight.id.clone(),
+            QuadrotorConfigurations::Liftoff(config) => config.quadrotor_config.id.clone(),
+            QuadrotorConfigurations::Betaflight(config) => config.quadrotor_config.id.clone(),
         }
     }
 }
@@ -130,6 +128,8 @@ pub struct QuadrotorConfig {
     pub arm_length_m: f32,
     /// Yaw torque constant
     pub yaw_torque_constant: f32,
+    /// Initial Position
+    pub initial_position: [f32; 3],
 }
 
 impl Default for QuadrotorConfig {
@@ -142,6 +142,7 @@ impl Default for QuadrotorConfig {
             max_thrust_kg: 1.3 * 2.5,
             arm_length_m: 0.150,
             yaw_torque_constant: 0.05,
+            initial_position: [0.0, 0.0, 0.0],
         }
     }
 }
@@ -164,20 +165,8 @@ impl QuadrotorConfig {
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct LiftoffQuadrotorConfig {
-    /// ID or name of quadrotor
-    pub id: String,
-    /// Mass of the quadrotor in kg
-    pub mass: f32,
-    /// Gravity in m/s^2
-    pub gravity: f32,
-    /// Inertia matrix in kg*m^2
-    pub inertia_matrix: [f32; 9],
-    /// Maximum thrust in kilograms
-    pub max_thrust_kg: f32,
-    /// Arm length in meters
-    pub arm_length_m: f32,
-    /// Yaw torque constant
-    pub yaw_torque_constant: f32,
+    /// Base quadrotor configurations
+    pub quadrotor_config: QuadrotorConfig,
     /// The IP address where Liftoff is publishing state data
     pub ip_address: String,
     pub connection_timeout: tokio::time::Duration,
@@ -189,13 +178,10 @@ pub struct LiftoffQuadrotorConfig {
 impl Default for LiftoffQuadrotorConfig {
     fn default() -> Self {
         LiftoffQuadrotorConfig {
-            id: "LiftoffQuad".to_string(),
-            mass: 1.3,
-            gravity: 9.81,
-            inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
-            max_thrust_kg: 1.3 * 2.5,
-            arm_length_m: 0.150,
-            yaw_torque_constant: 0.05,
+            quadrotor_config: QuadrotorConfig {
+                id: "LiftoffQuad".to_string(),
+                ..Default::default()
+            },
             ip_address: String::from("0.0.0.0:9001"),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
@@ -209,7 +195,6 @@ impl Default for LiftoffQuadrotorConfig {
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct Betaflight {
-    pub id: String,
     pub quadrotor_config: QuadrotorConfig,
     /// The IP address where Liftoff is publishing state data
     pub vicon_address: String,
@@ -224,7 +209,6 @@ impl Default for Betaflight {
         Betaflight {
             quadrotor_config: QuadrotorConfig::default(),
             vicon_address: String::from("0.0.0.0:51001"),
-            id: String::new(),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
             serial_port: None,

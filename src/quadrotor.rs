@@ -76,10 +76,11 @@ pub fn build_quadrotor(
     quadrotor_config: &config::QuadrotorConfigurations,
 ) -> Result<(Box<dyn QuadrotorInterface>, f32), SimulationError> {
     let (quad, mass): (Box<dyn QuadrotorInterface>, f32) = match &quadrotor_config {
-        QuadrotorConfigurations::Peng(quad_config) => (
+        QuadrotorConfigurations::Peng(ref quad_config) => (
             Box::new(Quadrotor::new(
                 1.0 / config.simulation.simulation_frequency as f32,
                 config.simulation.clone(),
+                quad_config.clone(),
                 config.imu.clone(),
                 quad_config.mass,
                 config.simulation.gravity,
@@ -93,7 +94,7 @@ pub fn build_quadrotor(
                 config.simulation.clone(),
                 liftoff_quad_config.clone(),
             )?),
-            liftoff_quad_config.mass,
+            liftoff_quad_config.quadrotor_config.mass,
         ),
         QuadrotorConfigurations::Betaflight(ref betaflight_config) => (
             Box::new(BetaflightQuad::new(
