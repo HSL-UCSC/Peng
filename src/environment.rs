@@ -57,6 +57,7 @@ impl Obstacle {
 ///     obstacles_velocity_bounds: [0.0, 0.0, 0.0],
 ///     obstacles_radius_bounds: [0.0, 0.0],
 ///     rng: ChaCha8Rng::from_entropy(),
+///     ..Default::default()
 /// };
 /// ```
 #[derive(Clone, Debug)]

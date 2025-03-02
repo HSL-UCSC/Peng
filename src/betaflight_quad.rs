@@ -9,10 +9,6 @@ use std::time::Duration;
 use vicon_sys::HasViconHardware;
 
 /// Represents a physical quadrotor running a Betaflight controller.
-/// # Example
-/// ```
-/// let quad = BetaflightQuad{ }
-/// ```
 pub struct BetaflightQuad {
     /// The serial writer to communicate with the quadrotor
     pub writer: Option<Writer>,
@@ -386,12 +382,13 @@ async fn feedback_loop(
 /// Scale a control value to a stick command, given a minimum and maximum input range
 /// # Example
 /// ```
+/// use peng_quad::betaflight_quad::scale_control;
 /// let throttle = scale_control(0.0, 0_f32, 20_f32);
 /// assert_eq!(throttle, 1000_f32);
 /// let throttle = scale_control(250.0, 0_f32, 200_f32);
 /// assert_eq!(throttle, 2000_f32);
 /// ```
-fn scale_control(value: f32, min_torque: f32, max_torque: f32) -> f32 {
+pub fn scale_control(value: f32, min_torque: f32, max_torque: f32) -> f32 {
     let torque = value.clamp(min_torque, max_torque);
     let min_ppm = 1000_f32;
     let max_ppm = 2000_f32;
