@@ -9,7 +9,7 @@ use nalgebra::Matrix3;
 use crate::SimulationError;
 
 use serde::de::{Deserializer, Error};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_yaml::Value;
 
 #[derive(Clone, serde::Deserialize)]

@@ -256,12 +256,8 @@ impl Quadrotor {
         config: config::SimulationConfig,
         quadrotor_config: config::QuadrotorConfig,
         imu_config: config::ImuConfig,
-        mass: f32,
-        gravity: f32,
-        drag_coefficient: f32,
-        inertia_matrix: [f32; 9],
     ) -> Result<Self, SimulationError> {
-        let inertia_matrix = Matrix3::from_row_slice(&inertia_matrix);
+        let inertia_matrix = Matrix3::from_row_slice(&quadrotor_config.inertia_matrix);
         let inertia_matrix_inv =
             inertia_matrix
                 .try_inverse()
@@ -277,17 +273,17 @@ impl Quadrotor {
         )?;
         Ok(Self {
             name: "PengQuad".to_string(),
-            config,
+            config: config.clone(),
             position: Vector3::zeros(),
             velocity: Vector3::zeros(),
             acceleration: Vector3::zeros(),
             orientation: UnitQuaternion::identity(),
             angular_velocity: Vector3::zeros(),
             initial_position: quadrotor_config.initial_position.into(),
-            mass,
-            gravity,
+            mass: quadrotor_config.mass,
+            gravity: config.gravity,
             time_step,
-            drag_coefficient,
+            drag_coefficient: quadrotor_config.drag_coefficient,
             inertia_matrix,
             inertia_matrix_inv,
             previous_thrust: 0.0,

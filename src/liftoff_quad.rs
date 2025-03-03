@@ -3,7 +3,7 @@ use crate::quadrotor::{QuadrotorInterface, QuadrotorState, State};
 use crate::SimulationError;
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
-use nalgebra::{Matrix4, Quaternion, UnitQuaternion, Vector3};
+use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use tokio::sync::watch;
 use tokio::time::Duration;
 
