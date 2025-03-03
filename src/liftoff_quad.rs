@@ -326,6 +326,7 @@ pub struct LiftoffPacket {
 impl LiftoffPacket {
     /// Returns the angular velocity p, q, r
     /// These are the roll rate, pitch rate, and yaw rate respectively
+    #[allow(dead_code)]
     pub fn pqr(&self) -> Vector3<f32> {
         Vector3::new(self.gyro[1], self.gyro[0], self.gyro[2])
     }

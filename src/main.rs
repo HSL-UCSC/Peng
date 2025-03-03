@@ -95,9 +95,9 @@ async fn main() -> Result<(), SimulationError> {
 
     log::info!("Starting simulation...");
     let time_step = 1.0 / config.simulation.simulation_frequency as f32;
-    let frame_time = Duration::from_secs_f32(time_step);
     let start_time = tokio::time::Instant::now();
-    let next_frame = start_time;
+    let _frame_time = Duration::from_secs_f32(time_step);
+    let _next_frame = start_time;
     // Observe Loop Warmup
     let start_time = Instant::now();
 
