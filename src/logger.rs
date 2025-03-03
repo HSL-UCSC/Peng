@@ -306,7 +306,7 @@ impl RerunLogger {
 /// let rec = rerun::RecordingStreamBuilder::new("peng").connect().unwrap();
 /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
 /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::QuadrotorConfig::default(), config::ImuConfig::default(), mass, gravity, drag_coefficient, inertia_matrix).unwrap();
+/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::QuadrotorConfig::default(), config::ImuConfig::default()).unwrap();
 /// let quad_state = quadrotor.observe(0.0).unwrap();
 /// let desired_position = Vector3::new(0.0, 0.0, 0.0);
 /// let desired_orientation = Vector3::new(0.0, 0.0, 0.0);
