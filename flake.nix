@@ -15,11 +15,11 @@
 
         # Define OS-specific dependencies
         osSpecificDeps = if pkgs.stdenv.isLinux then [
-          systemd  # Required for libudev on Linux
-          pkg-config  # Helps with system dependencies
+          pkgs.systemd
+          pkgs.pkg-config
         ] else if pkgs.stdenv.isDarwin then [
-          darwin.apple_sdk.frameworks.CoreServices  # Needed for macOS system integration
-          darwin.apple_sdk.frameworks.IOKit         # Required for hardware communication
+          pkgs.darwin.apple_sdk.frameworks.CoreServices  # Needed for macOS system integration
+          pkgs.darwin.apple_sdk.frameworks.IOKit         # Required for hardware communication
         ] else [];
 
       in
