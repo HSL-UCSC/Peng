@@ -1,3 +1,8 @@
+use crate::betaflight_quad::BetaflightQuad;
+use crate::config;
+use crate::config::QuadrotorConfigurations;
+use crate::liftoff_quad::LiftoffQuad;
+use crate::Quadrotor;
 use crate::SimulationError;
 use nalgebra::{UnitQuaternion, Vector3};
 use std::ops::{Deref, DerefMut};
@@ -46,7 +51,7 @@ impl DerefMut for QuadrotorState {
 
 /// Types implementing this trait can be used as a quadrotor in the simulation.
 /// The underlying model can be internal or external to the simulator.
-pub trait QuadrotorInterface {
+pub trait QuadrotorInterface: Send {
     fn control(
         &mut self,
         step_number: usize,
@@ -64,4 +69,36 @@ pub trait QuadrotorInterface {
 
     // TODO: integrate this into the observe method, add a
     fn read_imu(&self) -> Result<(Vector3<f32>, Vector3<f32>), SimulationError>;
+}
+
+pub fn build_quadrotor(
+    config: &config::Config,
+    quadrotor_config: &config::QuadrotorConfigurations,
+) -> Result<(Box<dyn QuadrotorInterface>, f32), SimulationError> {
+    let (quad, mass): (Box<dyn QuadrotorInterface>, f32) = match &quadrotor_config {
+        QuadrotorConfigurations::Peng(ref quad_config) => (
+            Box::new(Quadrotor::new(
+                1.0 / config.simulation.simulation_frequency as f32,
+                config.simulation.clone(),
+                quad_config.clone(),
+                config.imu.clone(),
+            )?),
+            quad_config.mass,
+        ),
+        QuadrotorConfigurations::Liftoff(ref liftoff_quad_config) => (
+            Box::new(LiftoffQuad::new(
+                config.simulation.clone(),
+                liftoff_quad_config.clone(),
+            )?),
+            liftoff_quad_config.quadrotor_config.mass,
+        ),
+        QuadrotorConfigurations::Betaflight(ref betaflight_config) => (
+            Box::new(BetaflightQuad::new(
+                config.simulation.clone(),
+                betaflight_config.clone(),
+            )?),
+            betaflight_config.quadrotor_config.mass,
+        ),
+    };
+    Ok((quad, mass))
 }

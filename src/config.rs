@@ -8,13 +8,18 @@ use nalgebra::Matrix3;
 
 use crate::SimulationError;
 
-#[derive(serde::Deserialize)]
+use serde::de::{Deserializer, Error};
+use serde::Deserialize;
+use serde_yaml::Value;
+
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the simulation
 pub struct Config {
     /// Simulation configuration
     pub simulation: SimulationConfig,
     /// Quadrotor configuration
-    pub quadrotor: QuadrotorConfigurations,
+    #[serde(default, deserialize_with = "single_or_multiple_quadrotors")]
+    pub quadrotor: Vec<QuadrotorConfigurations>,
     /// PID Controller configuration
     pub pid_controller: PIDControllerConfig,
     /// IMU configuration
@@ -35,13 +40,11 @@ pub struct Config {
     pub render_depth: bool,
     /// MultiThreading depth rendering
     pub use_multithreading_depth_rendering: bool,
-    /// Run the simulation in real time mode
-    pub real_time: bool,
     /// Angle limits
     pub angle_limits: Option<Vec<f32>>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for a planner step
 pub struct PlannerStep {
     /// Step number that the planner should be executed (Unit: ms)
@@ -69,6 +72,8 @@ pub struct SimulationConfig {
     pub use_rk4_for_dynamics_control: bool,
     /// Use RK4 for updating quadrotor dynamics without controls
     pub use_rk4_for_dynamics_update: bool,
+    /// Run the simulation in real time mode
+    pub real_time: bool,
 }
 
 impl Default for SimulationConfig {
@@ -81,6 +86,7 @@ impl Default for SimulationConfig {
             duration: 70.0,
             use_rk4_for_dynamics_control: false,
             use_rk4_for_dynamics_update: false,
+            real_time: false,
         }
     }
 }
@@ -92,6 +98,16 @@ pub enum QuadrotorConfigurations {
     Peng(QuadrotorConfig),
     Liftoff(LiftoffQuadrotorConfig),
     Betaflight(Betaflight),
+}
+
+impl QuadrotorConfigurations {
+    pub fn get_id(&self) -> String {
+        match self {
+            QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config.id.clone(),
+            QuadrotorConfigurations::Liftoff(config) => config.quadrotor_config.id.clone(),
+            QuadrotorConfigurations::Betaflight(config) => config.quadrotor_config.id.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -112,6 +128,8 @@ pub struct QuadrotorConfig {
     pub arm_length_m: f32,
     /// Yaw torque constant
     pub yaw_torque_constant: f32,
+    /// Initial Position
+    pub initial_position: [f32; 3],
 }
 
 impl Default for QuadrotorConfig {
@@ -124,6 +142,7 @@ impl Default for QuadrotorConfig {
             max_thrust_kg: 1.3 * 2.5,
             arm_length_m: 0.150,
             yaw_torque_constant: 0.05,
+            initial_position: [0.0, 0.0, 0.0],
         }
     }
 }
@@ -146,20 +165,8 @@ impl QuadrotorConfig {
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct LiftoffQuadrotorConfig {
-    /// ID or name of quadrotor
-    pub id: String,
-    /// Mass of the quadrotor in kg
-    pub mass: f32,
-    /// Gravity in m/s^2
-    pub gravity: f32,
-    /// Inertia matrix in kg*m^2
-    pub inertia_matrix: [f32; 9],
-    /// Maximum thrust in kilograms
-    pub max_thrust_kg: f32,
-    /// Arm length in meters
-    pub arm_length_m: f32,
-    /// Yaw torque constant
-    pub yaw_torque_constant: f32,
+    /// Base quadrotor configurations
+    pub quadrotor_config: QuadrotorConfig,
     /// The IP address where Liftoff is publishing state data
     pub ip_address: String,
     pub connection_timeout: tokio::time::Duration,
@@ -171,13 +178,10 @@ pub struct LiftoffQuadrotorConfig {
 impl Default for LiftoffQuadrotorConfig {
     fn default() -> Self {
         LiftoffQuadrotorConfig {
-            id: "LiftoffQuad".to_string(),
-            mass: 1.3,
-            gravity: 9.81,
-            inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
-            max_thrust_kg: 1.3 * 2.5,
-            arm_length_m: 0.150,
-            yaw_torque_constant: 0.05,
+            quadrotor_config: QuadrotorConfig {
+                id: "LiftoffQuad".to_string(),
+                ..Default::default()
+            },
             ip_address: String::from("0.0.0.0:9001"),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
@@ -191,7 +195,6 @@ impl Default for LiftoffQuadrotorConfig {
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct Betaflight {
-    pub id: String,
     pub quadrotor_config: QuadrotorConfig,
     /// The IP address where Liftoff is publishing state data
     pub vicon_address: String,
@@ -206,7 +209,6 @@ impl Default for Betaflight {
         Betaflight {
             quadrotor_config: QuadrotorConfig::default(),
             vicon_address: String::from("0.0.0.0:51001"),
-            id: String::new(),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
             serial_port: None,
@@ -225,7 +227,7 @@ impl Betaflight {
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the PID controller
 pub struct PIDControllerConfig {
     /// Position gains
@@ -262,7 +264,7 @@ pub struct ImuConfig {
     pub gyro_bias_std: f32,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the maze
 pub struct MazeConfig {
     /// Upper bounds of the maze in meters (x, y, z)
@@ -277,7 +279,7 @@ pub struct MazeConfig {
     pub obstacles_radius_bounds: [f32; 2],
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the camera
 pub struct CameraConfig {
     /// Camera resolution in pixels (width, height)
@@ -292,7 +294,7 @@ pub struct CameraConfig {
     pub rotation_transform: [f32; 9],
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 /// Configuration for the mesh
 pub struct MeshConfig {
     /// Division of the 2D mesh, the mesh will be division x division squares
@@ -315,13 +317,40 @@ impl Config {
     }
 }
 
+/// Helper function to allow deserializing either a single `QuadrotorConfigurations`
+/// or a list of them into a `Vec<QuadrotorConfigurations>`.
+fn single_or_multiple_quadrotors<'de, D>(
+    deserializer: D,
+) -> Result<Vec<QuadrotorConfigurations>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let parsed: Value = Deserialize::deserialize(deserializer)?;
+
+    match parsed {
+        // If it's a YAML list (sequence), parse as Vec
+        Value::Sequence(seq) => {
+            serde_yaml::from_value(Value::Sequence(seq)).map_err(D::Error::custom)
+        }
+        // If it's a single object (mapping), wrap it in a list
+        Value::Mapping(_) => {
+            serde_yaml::from_value(Value::Sequence(vec![parsed])).map_err(D::Error::custom)
+        }
+        _ => Err(D::Error::custom(
+            "Expected a mapping (object) or a sequence (array)",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn test_base_config() {
         let config = Config::from_yaml("tests/testdata/test_config_base.yaml").unwrap();
-        let quadrotor_config: QuadrotorConfig = match config.quadrotor {
+        assert!(config.quadrotor.len() == 1);
+        let quad_config = config.quadrotor.first().unwrap();
+        let quadrotor_config: QuadrotorConfig = match quad_config.clone() {
             QuadrotorConfigurations::Peng(quadrotor_config) => quadrotor_config,
             _ => panic!("Failed to load Peng configuration"),
         };
@@ -342,7 +371,9 @@ mod tests {
     #[test]
     fn test_liftoff_config() {
         let config = Config::from_yaml("tests/testdata/test_liftoff_base.yaml").unwrap();
-        let liftoff_config = match config.quadrotor {
+        assert!(config.quadrotor.len() == 1);
+        let quad_config = config.quadrotor.first().unwrap();
+        let liftoff_config = match quad_config {
             QuadrotorConfigurations::Liftoff(liftoff_config) => liftoff_config,
             _ => panic!("Failed to load Liftoff configuration"),
         };
@@ -353,7 +384,9 @@ mod tests {
     fn test_betaflight_config() {
         let config = Config::from_yaml("tests/testdata/test_betaflight_base.yaml")
             .expect("failed to unwrap");
-        let liftoff_config = match config.quadrotor {
+        assert!(config.quadrotor.len() == 1);
+        let quad_config = config.quadrotor.first().unwrap();
+        let liftoff_config = match quad_config {
             QuadrotorConfigurations::Betaflight(liftoff_config) => liftoff_config,
             _ => panic!("Failed to load Liftoff configuration"),
         };

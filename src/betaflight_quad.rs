@@ -1,18 +1,14 @@
 #![allow(clippy::all, dead_code, unused_variables)]
+use crate::config;
+use crate::quadrotor::{QuadrotorInterface, QuadrotorState};
+use crate::SimulationError;
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
-use peng_quad::config;
-use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState};
-use peng_quad::SimulationError;
 use std::time::Duration;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
 
 /// Represents a physical quadrotor running a Betaflight controller.
-/// # Example
-/// ```
-/// let quad = BetaflightQuad{ }
-/// ```
 pub struct BetaflightQuad {
     /// The serial writer to communicate with the quadrotor
     pub writer: Option<Writer>,
@@ -279,16 +275,8 @@ impl QuadrotorInterface for BetaflightQuad {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
 
-    fn parameters(&self) -> peng_quad::config::QuadrotorConfig {
-        peng_quad::config::QuadrotorConfig {
-            id: self.config.id.clone(),
-            mass: self.config.quadrotor_config.mass,
-            max_thrust_kg: self.config.quadrotor_config.max_thrust_kg,
-            drag_coefficient: 0.0,
-            inertia_matrix: self.config.quadrotor_config.inertia_matrix,
-            arm_length_m: self.config.quadrotor_config.arm_length_m,
-            yaw_torque_constant: self.config.quadrotor_config.yaw_torque_constant,
-        }
+    fn parameters(&self) -> crate::config::QuadrotorConfig {
+        self.config.quadrotor_config.clone()
     }
 }
 
@@ -386,12 +374,13 @@ async fn feedback_loop(
 /// Scale a control value to a stick command, given a minimum and maximum input range
 /// # Example
 /// ```
+/// use peng_quad::betaflight_quad::scale_control;
 /// let throttle = scale_control(0.0, 0_f32, 20_f32);
 /// assert_eq!(throttle, 1000_f32);
 /// let throttle = scale_control(250.0, 0_f32, 200_f32);
 /// assert_eq!(throttle, 2000_f32);
 /// ```
-fn scale_control(value: f32, min_torque: f32, max_torque: f32) -> f32 {
+pub fn scale_control(value: f32, min_torque: f32, max_torque: f32) -> f32 {
     let torque = value.clamp(min_torque, max_torque);
     let min_ppm = 1000_f32;
     let max_ppm = 2000_f32;

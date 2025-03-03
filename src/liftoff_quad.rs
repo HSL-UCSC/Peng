@@ -1,17 +1,13 @@
+use crate::config::{LiftoffQuadrotorConfig, SimulationConfig};
+use crate::quadrotor::{QuadrotorInterface, QuadrotorState, State};
+use crate::SimulationError;
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
-use nalgebra::{Matrix4, Quaternion, UnitQuaternion, Vector3};
-use peng_quad::config::{LiftoffQuadrotorConfig, SimulationConfig};
-use peng_quad::quadrotor::{QuadrotorInterface, QuadrotorState, State};
-use peng_quad::SimulationError;
+use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use tokio::sync::watch;
 use tokio::time::Duration;
 
 /// Represents a quadrotor in the game Liftoff
-/// # Example
-/// ```
-/// let quad = LiftoffQuad{ }
-/// ```
 pub struct LiftoffQuad {
     /// The serial writer to communicate with the quadrotor
     pub writer: Option<Writer>,
@@ -32,6 +28,7 @@ pub struct LiftoffQuad {
 }
 
 impl LiftoffQuad {
+    #[allow(dead_code)]
     pub fn new(
         simulation_config: SimulationConfig,
         config: LiftoffQuadrotorConfig,
@@ -96,24 +93,48 @@ impl LiftoffQuad {
         })
     }
 
+    /// Calculate the body-frame velocity of the quadrotor
+    /// Given q_ib, the quaternion that rotates from the inertial frame to the body frame,
+    /// p1, the position of the quadrotor at time t_n, p2, the position of the quadrotor at time t_n+1,
+    /// and the time step dt.
+    fn velocity_body(
+        &self,
+        q_ib: UnitQuaternion<f32>,
+        p1: Vector3<f32>, // Inertial position a t_n
+        p2: Vector3<f32>, // Inertial position at t_n+1
+        dt: f32,
+    ) -> Vector3<f32> {
+        // Inertial velocity
+        let v_inertial = (p2 - p1) / dt;
+        // Transform to body frame
+        // let q_inv = q_ib.inverse();
+        q_ib.transform_vector(&v_inertial)
+    }
+
     // Function to calculate body-frame acceleration for NED coordinates
     fn body_acceleration(
         &self,
-        q_inertial_to_body: UnitQuaternion<f32>, // Unit quaternion rotation from inertial to body
-        omega_body: Vector3<f32>,                // Angular velocity in body frame
-        velocity_body: Vector3<f32>,             // Linear velocity in body frame
+        v_current: Vector3<f32>,  // Linear velocity in body frame
+        v_previous: Vector3<f32>, // Linear velocity in body frame
+        dt: f32,
     ) -> Vector3<f32> {
-        // Calculate thrust acceleration (negative Z in NED body frame)
-        let thrust_acceleration = Vector3::new(0.0, 0.0, -self.previous_thrust / self.config.mass);
-        // Rotate the gravity vector to the body frame
-        let gravity_inertial = Vector3::new(0.0, 0.0, self.config.gravity); // NED gravity vector in inertial frame
-        let gravity_body = q_inertial_to_body.transform_vector(&gravity_inertial); // Rotate gravity vector to body frame
+        (v_current - v_previous) / dt
+    }
 
-        // Calculate rotational (Coriolis) effects
-        let rotational_acceleration = omega_body.cross(&velocity_body);
-
-        // Combine all terms
-        thrust_acceleration + gravity_body - rotational_acceleration
+    fn angular_velocity(
+        &self,
+        q1: UnitQuaternion<f32>,
+        q2: UnitQuaternion<f32>,
+        dt: f32,
+        threshold: f32,
+    ) -> Vector3<f32> {
+        let delta_q = q2 * q1.conjugate();
+        let delta_q = UnitQuaternion::from_quaternion(delta_q.normalize());
+        let (axis, angle) = delta_q.axis_angle().unwrap_or((Vector3::x_axis(), 0.0));
+        if angle.abs() < threshold {
+            return Vector3::zeros(); // Return zero angular velocity
+        }
+        axis.into_inner() * (angle / dt)
     }
 }
 
@@ -182,7 +203,6 @@ impl QuadrotorInterface for LiftoffQuad {
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
     fn observe(&mut self, t: f32) -> Result<QuadrotorState, SimulationError> {
-        // TODO: if there is not a new packet, return the old state
         if !self
             .consumer
             .has_changed()
@@ -190,6 +210,8 @@ impl QuadrotorInterface for LiftoffQuad {
         {
             return Ok(self.state.clone());
         }
+
+        let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
         self.previous_state = self.state.clone();
         let packet = self.consumer.borrow_and_update().clone();
         let sample = match packet {
@@ -203,7 +225,7 @@ impl QuadrotorInterface for LiftoffQuad {
 
         let initial_state = self.initial_state.get_or_insert_with(|| {
             let get_initial_attitude = || -> UnitQuaternion<f32> {
-                let attitude = sample.attitude_quaternion();
+                let attitude = sample.rotation();
                 UnitQuaternion::new_normalize(Quaternion::new(
                     (1.0 - (attitude.k * attitude.k)).sqrt(),
                     0.0,
@@ -212,10 +234,7 @@ impl QuadrotorInterface for LiftoffQuad {
                 ))
             };
             QuadrotorState {
-                time: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs_f32(),
+                time: t,
                 state: State {
                     position: sample.position(),
                     velocity: Vector3::zeros(),
@@ -232,35 +251,31 @@ impl QuadrotorInterface for LiftoffQuad {
 
         // Adjust the sample by the initial state
         // Adjust for the initial yaw - we take the starting yaw of the vehicle to be 0
-        let initial_quaternion = initial_state.orientation;
-        let attitude_quaternion =
-            initial_quaternion.conjugate() * sample.attitude_quaternion() * initial_quaternion;
-        // let attitude_quaternion = sample.attitude_quaternion();
-        // Asjut fot the initial position - we take the starting location of the vehicle to be the
+        let rotation = sample.rotation();
+        // Adjust fot the initial position - we take the starting location of the vehicle to be the
         // origin
-        let mut sample_position = sample.position();
-        sample_position[0] -= initial_state.position[0];
-        sample_position[1] -= initial_state.position[1];
-        sample_position[2] -= initial_state.position[2];
+        let mut position = sample.position();
+        position[0] -= initial_state.position[0];
+        position[1] -= initial_state.position[1];
+        position[2] -= initial_state.position[2];
 
-        // Calculate the body-frame velocity by rotating the inertial velocity using the
-        // attitude quaternion.
-        let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
-        let v_body = attitude_quaternion
-            .transform_vector(&((sample_position - self.previous_state.position) / (dt)));
-        // sample_position[2] = -sample_position[2];
-
-        let omega_body = sample.pqr();
-        let alpha = 0.5;
+        let v_body = self.velocity_body(rotation, self.previous_state.position, position, dt);
+        let omega_body =
+            self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt, 0.1);
+        // println!("Unfiltered Omega");
+        // dbg!(omega_body);
+        // Low-pass filter the angular velocity
+        let alpha = 0.8;
         let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
-        let acceleration_body = self.body_acceleration(attitude_quaternion, omega_body, v_body);
+        let acceleration_body = self.body_acceleration(v_body, self.previous_state.velocity, dt);
+
         self.state = QuadrotorState {
             time: t,
             state: State {
-                position: sample_position,
+                position,
                 velocity: v_body,
                 acceleration: acceleration_body,
-                orientation: attitude_quaternion,
+                orientation: rotation,
                 angular_velocity: omega_body,
             },
             ..Default::default()
@@ -269,7 +284,7 @@ impl QuadrotorInterface for LiftoffQuad {
     }
 
     fn max_thrust(&self) -> f32 {
-        self.config.max_thrust_kg
+        self.config.quadrotor_config.max_thrust_kg
     }
 
     /// Calculate all maximum torques and return them as a tuple
@@ -284,16 +299,8 @@ impl QuadrotorInterface for LiftoffQuad {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
 
-    fn parameters(&self) -> peng_quad::config::QuadrotorConfig {
-        peng_quad::config::QuadrotorConfig {
-            id: self.config.id.clone(),
-            mass: self.config.mass,
-            max_thrust_kg: self.config.max_thrust_kg,
-            drag_coefficient: 0.0,
-            inertia_matrix: self.config.inertia_matrix,
-            arm_length_m: self.config.arm_length_m,
-            yaw_torque_constant: self.config.yaw_torque_constant,
-        }
+    fn parameters(&self) -> crate::config::QuadrotorConfig {
+        self.config.quadrotor_config.clone()
     }
 }
 
@@ -319,12 +326,13 @@ pub struct LiftoffPacket {
 impl LiftoffPacket {
     /// Returns the angular velocity p, q, r
     /// These are the roll rate, pitch rate, and yaw rate respectively
+    #[allow(dead_code)]
     pub fn pqr(&self) -> Vector3<f32> {
         Vector3::new(self.gyro[1], self.gyro[0], self.gyro[2])
     }
 
     /// Returns the attitude quaternion in the NED frame
-    pub fn attitude_quaternion(&self) -> UnitQuaternion<f32> {
+    pub fn rotation(&self) -> UnitQuaternion<f32> {
         // Cast the attitude as a unit quaternion, and flip the handedness by inverting the z
         // axis.
         let r = UnitQuaternion::from_quaternion(
@@ -366,13 +374,14 @@ async fn feedback_loop_fast(
 /// Scale a value from a given range to a new range
 /// # Example
 /// ```
+/// use peng_quad::liftoff_quad::normalize;
 /// let value = 0.0;
 /// let min = -10.0;
 /// let max = 10.0;
 /// let scaled_value = normalize(value, min, max);
 /// assert_eq!(scaled_value, 0.5);
 /// ```
-fn normalize(value: f32, min: f32, max: f32) -> f32 {
+pub fn normalize(value: f32, min: f32, max: f32) -> f32 {
     (value - min) / (max - min)
 }
 
@@ -405,11 +414,12 @@ fn scale_to_rc_command_with_center(value: f32, min: f32, center: f32, max: f32) 
 /// Throttle is inverted from Xinput to Liftoff
 /// # Example
 /// ```
+/// use peng_quad::liftoff_quad::scale_throttle;
 /// let thrust = 0.0;
 /// let throttle = scale_throttle(thrust);
-/// assert_eq!(throttle, 0);
+/// assert_eq!(throttle, 32768);
 /// ```
-fn scale_throttle(thrust: f32) -> i32 {
+pub fn scale_throttle(thrust: f32) -> i32 {
     // thrust is inverted from Xinput to Liftoff
     -scale_to_rc_command(thrust, -32768, 32767)
 }
@@ -417,14 +427,6 @@ fn scale_throttle(thrust: f32) -> i32 {
 fn scale_control(value: f32) -> i32 {
     scale_to_rc_command_with_center(value, -32768_f32, 0.0, 32767_f32)
 }
-
-#[rustfmt::skip]
-const _MOTOR_MIXING_MATRIX: Matrix4<f32> = Matrix4::new(
-    1.0, 1.0, 1.0, 1.0,
-    -1.0, 1.0, -1.0, 1.0,
-    -1.0, -1.0, 1.0, 1.0,
-    1.0, -1.0, -1.0, 1.0,
-);
 
 #[cfg(test)]
 mod tests {
@@ -451,32 +453,19 @@ mod tests {
             LiftoffQuadrotorConfig::default(),
         )
         .unwrap();
-        let omega = Vector3::zeros();
-        let v = Vector3::zeros();
 
-        let q = UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0);
-        let a = quad.body_acceleration(q, omega, v);
-        assert_eq!(a, Vector3::new(0.0, 0.0, quad.config.gravity));
+        let a = quad.body_acceleration(
+            Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
+            Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
+            0.01,
+        );
+        assert_eq!(a, Vector3::new(0.0, 0.0, 9.81));
 
-        // Roll onto the right side, gravity should align with y direction to the "east" side of
-        // the drone
-        let q = UnitQuaternion::from_euler_angles(-FRAC_PI_2, 0.0, 0.0);
-        let a = quad.body_acceleration(q, omega, v);
-        assert!(is_close(
-            &a,
-            &Vector3::new(0.0, quad.config.gravity, 0.0),
-            1e-6,
-            1e-6
-        ));
-
-        // Pitch forward 90 degrees, gravity should align with x direction down the nose
-        let q = UnitQuaternion::from_euler_angles(0.0, FRAC_PI_2, 0.0);
-        let a = quad.body_acceleration(q, omega, v);
-        assert!(is_close(
-            &a,
-            &Vector3::new(quad.config.gravity, 0.0, 0.0),
-            1e-6,
-            1e-6
-        ));
+        let a = quad.body_acceleration(
+            Vector3::<f32>::new(0_f32, 0_f32, 0_f32),
+            Vector3::<f32>::new(0_f32, 0_f32, 9.81),
+            1.0,
+        );
+        assert!(is_close(&a, &Vector3::new(0.0, 0.0, -9.81), 1e-6, 1e-6));
     }
 }

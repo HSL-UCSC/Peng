@@ -9,7 +9,7 @@ use rand_chacha::ChaCha8Rng;
 /// use nalgebra::Vector3;
 /// let obstacle = Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Obstacle {
     /// The position of the obstacle
     pub position: Vector3<f32>,
@@ -57,10 +57,13 @@ impl Obstacle {
 ///     obstacles_velocity_bounds: [0.0, 0.0, 0.0],
 ///     obstacles_radius_bounds: [0.0, 0.0],
 ///     rng: ChaCha8Rng::from_entropy(),
+///     ..Default::default()
 /// };
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Maze {
+    /// The simulation time for this maze
+    pub t: f32,
     /// The lower bounds of the maze in the x, y, and z directions
     pub lower_bounds: [f32; 3],
     /// The upper bounds of the maze in the x, y, and z directions
@@ -79,9 +82,10 @@ pub struct Maze {
 impl Default for Maze {
     fn default() -> Self {
         Self {
-            lower_bounds: [0.0, 0.0, 0.0],    // Default maze starts at origin
+            t: 0_f32,
+            lower_bounds: [0.0, 0.0, 0.0], // Default maze starts at origin
             upper_bounds: [10.0, 10.0, 10.0], // Default size 10x10x10
-            obstacles: Vec::new(),            // No obstacles by default
+            obstacles: Vec::new(),         // No obstacles by default
             obstacles_velocity_bounds: [0.0, 0.0, 0.0], // No movement
             obstacles_radius_bounds: [0.5, 2.0], // Default obstacle size range
             rng: ChaCha8Rng::seed_from_u64(0), // Deterministic default RNG seed
@@ -111,6 +115,7 @@ impl Maze {
         obstacles_radius_bounds: [f32; 2],
     ) -> Self {
         let mut maze = Maze {
+            t: 0_f32,
             lower_bounds,
             upper_bounds,
             obstacles: Vec::new(),
@@ -160,6 +165,7 @@ impl Maze {
     /// maze.update_obstacles(0.1);
     /// ```
     pub fn update_obstacles(&mut self, dt: f32) {
+        self.t += dt;
         self.obstacles.iter_mut().for_each(|obstacle| {
             obstacle.position += obstacle.velocity * dt;
             for i in 0..3 {

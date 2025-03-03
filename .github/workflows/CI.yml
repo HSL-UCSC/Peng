@@ -10,63 +10,73 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  nix-build: # Job for Linux and macOS using Nix flakes
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Cache Nix Store
+        uses: actions/cache@v3
+        with:
+          path: |
+            /nix/store
+            /nix/var/nix
+            ~/.cache/nix
+          key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-
+
+      - name: Enter Nix flake shell & Build
+        run: |
+          nix develop --command cargo build --verbose
+
+      - name: Run Tests
+        run: |
+          nix develop --command cargo test --verbose
+
+      - name: Check Formatting
+        run: |
+          nix develop --command cargo fmt -- --check
+
+      - name: Run Clippy (Linting)
+        run: |
+          nix develop --command cargo clippy -- -D warnings
+
+  windows-build: # Job for Windows using original setup
+    runs-on: windows-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Cache Cargo registry
         uses: actions/cache@v3
         with:
           path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          key: windows-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-registry-
+            windows-cargo-registry-
 
       - name: Cache Cargo build
         uses: actions/cache@v3
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          key: windows-cargo-build-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-build-
-
-      - name: Apt update
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update -y
-
-      - name: Install rerun requirements on Ubuntu
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get -y install \
-            libclang-dev \
-            libatk-bridge2.0 \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libssl-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            patchelf \
-            libudev-dev \
-            cmake \
-            protobuf-compiler
-
-      - name: Install Protobuf and CMake on macOS
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install cmake protobuf
-          protoc --version
-          cmake --version
+            windows-cargo-build-
 
       - name: Install Protobuf on Windows
-        if: matrix.os == 'windows-latest'
         run: |
           choco install cmake --installargs '"ADD_CMAKE_TO_PATH=System"'
           choco install protoc
@@ -75,10 +85,12 @@ jobs:
 
       - name: Build
         run: cargo build --verbose
+
       - name: Run tests
         run: cargo test --verbose
+
       - name: Check formatting
         run: cargo fmt -- --check
 
-      - name: Run Clippy (linting)
+      - name: Run Clippy (Linting)
         run: cargo clippy -- -D warnings
