@@ -274,7 +274,7 @@ impl Quadrotor {
         Ok(Self {
             name: "PengQuad".to_string(),
             config: config.clone(),
-            position: Vector3::zeros(),
+            position: quadrotor_config.initial_position.into(),
             velocity: Vector3::zeros(),
             acceleration: Vector3::zeros(),
             orientation: UnitQuaternion::identity(),

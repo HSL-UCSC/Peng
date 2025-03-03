@@ -103,11 +103,62 @@ async fn main() -> Result<(), SimulationError> {
 
     let clock_sync = Arc::clone(&worker_sync);
     let clock_handle = clock_handle(config.simulation.clone(), clock_sync);
+    // loop {
+    //     if start_time.elapsed() >= Duration::new(5, 0) {
+    //         break; // Exit the loop after 3 seconds
+    //     }
+    // }
+
+    let rr = rerun_logger.unwrap();
+    let quad_handles: Vec<tokio::task::JoinHandle<()>> = config
+        .quadrotor
+        .iter()
+        .map(|quadrotor_config| {
+            let quadrotor_sync_clone = Arc::clone(&worker_sync);
+            quadrotor_worker(
+                config.clone(),
+                quadrotor_config.clone(),
+                quadrotor_sync_clone,
+                rr.clone(),
+                rx_maze.clone(),
+            )
+            .unwrap()
+        })
+        .collect();
+
+    // TODO: just sleep in main thread for simulation duration?
     loop {
-        if start_time.elapsed() >= Duration::new(5, 0) {
-            break; // Exit the loop after 3 seconds
+        // If real-time mode is enabled, sleep until the next frame simulation frame
+        if config.real_time {
+            tokio::time::sleep_until(next_frame).await;
+            next_frame += frame_time;
         }
-    }
+        let time = time_step * i as f32;
+        maze.update_obstacles(time_step);
+        update_planner(
+            &mut planner_manager,
+            i,
+            time,
+            config.simulation.simulation_frequency,
+            &quad_state,
+            &maze.obstacles,
+            &planner_config,
+        )?;
+        let (desired_position, desired_velocity, desired_yaw) = planner_manager.update(
+            quad_state.position,
+            quad_state.orientation,
+            quad_state.velocity,
+            time,
+            &maze.obstacles,
+        )?;
+        let (thrust, desired_orientation) = controller.compute_position_control(
+            &desired_position,
+            &desired_velocity,
+            desired_yaw,
+            &quad_state.position,
+            &quad_state.velocity,
+            time_step,
+        );
 
     let rr = rerun_logger.unwrap();
     let quad_handles: Vec<tokio::task::JoinHandle<()>> = config
@@ -159,7 +210,7 @@ fn quadrotor_worker(
     let handle = tokio::spawn(async move {
         let (mut quad, mass) =
             build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
-        let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
+        let mut planner_manager = PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
         let planner_config: Vec<PlannerStepConfig> = config
             .planner_schedule
             .iter()
