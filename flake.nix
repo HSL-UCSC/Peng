@@ -19,7 +19,8 @@
           pkgs.pkg-config
         ] else if pkgs.stdenv.isDarwin then [
           pkgs.darwin.apple_sdk.frameworks.CoreServices  # Needed for macOS system integration
-          pkgs.darwin.apple_sdk.frameworks.IOKit         # Required for hardware communication
+          pkgs.darwin.apple_sdk.frameworks.CoreServices  # For macOS system integration
+          pkgs.darwin.apple_sdk.frameworks.IOKit           # For hardware communication
         ] else [];
 
       in
@@ -28,8 +29,10 @@
         
         devShell = with pkgs; mkShell {
           buildInputs = [
+            rust-analyzer
             cargo
             clippy
+            rustc
             rustc
             rustfmt
             pre-commit
@@ -44,11 +47,10 @@
             export GIT_CONFIG=$PWD/.gitconfig
             export CARGO_NET_GIT_FETCH_WITH_CLI=true
             export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
-
             ${if pkgs.stdenv.isLinux then ''
               export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
             '' else ""}
-
+            
             ${if pkgs.stdenv.isDarwin then ''
               echo "Running on macOS, using Darwin-specific dependencies."
             '' else ""}
@@ -56,8 +58,10 @@
             echo "Entering Rust development environment..."
             cargo fetch # Pre-fetch dependencies
 
-            if [ -z "$ZSH_VERSION" ] && [ -z "$BASH_VERSION" ]; then
-              export SHELL="$(which zsh || which bash)"
+            # Start Zsh if not already the active shell
+            if [ "$SHELL" != "$(command -v zsh)" ]; then
+              export SHELL="$(command -v zsh)"
+              exec zsh
             fi
           '';
         };
