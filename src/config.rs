@@ -328,11 +328,11 @@ where
     let parsed: Value = Deserialize::deserialize(deserializer)?;
 
     match parsed {
-        // If it's a YAML list (sequence), parse as Vec
+        // List of Quadrotors
         Value::Sequence(seq) => {
             serde_yaml::from_value(Value::Sequence(seq)).map_err(D::Error::custom)
         }
-        // If it's a single object (mapping), wrap it in a list
+        // Quadrotor Object
         Value::Mapping(_) => {
             serde_yaml::from_value(Value::Sequence(vec![parsed])).map_err(D::Error::custom)
         }
