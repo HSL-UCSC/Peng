@@ -21,6 +21,7 @@ quadrotor:
   drag_coefficient: 0.000 # Aerodynamic drag coefficient
   # Inertia matrix [Ixx, Ixy, Ixz, Iyx, Iyy, Iyz, Izx, Izy, Izz] (kg*m^2)
   inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3]
+  initial_position: [0.5, 0.5, 0.0]
 
 pid_controller:
   pos_gains: # PID gains for position control

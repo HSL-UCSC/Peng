@@ -103,11 +103,11 @@ async fn main() -> Result<(), SimulationError> {
 
     let clock_sync = Arc::clone(&worker_sync);
     let clock_handle = clock_handle(config.simulation.clone(), clock_sync);
-    loop {
-        if start_time.elapsed() >= Duration::new(5, 0) {
-            break; // Exit the loop after 3 seconds
-        }
-    }
+    // loop {
+    //     if start_time.elapsed() >= Duration::new(5, 0) {
+    //         break; // Exit the loop after 3 seconds
+    //     }
+    // }
 
     let rr = rerun_logger.unwrap();
     let quad_handles: Vec<tokio::task::JoinHandle<()>> = config
@@ -159,7 +159,7 @@ fn quadrotor_worker(
     let handle = tokio::spawn(async move {
         let (mut quad, mass) =
             build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
-        let mut planner_manager = PlannerManager::new(Vector3::zeros(), 0.0);
+        let mut planner_manager = PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
         let planner_config: Vec<PlannerStepConfig> = config
             .planner_schedule
             .iter()
