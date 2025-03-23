@@ -1,9 +1,69 @@
 use crate::environment::Obstacle;
-use nalgebra::{SMatrix, UnitQuaternion, Vector3};
-use crate::quadrotor::{QuadrotorState};
-use std::f32::consts::PI;
+use crate::quadrotor::QuadrotorState;
 use crate::SimulationError;
-use crate::{parse_vector3, parse_f32};
+use crate::{parse_f32, parse_vector3};
+use nalgebra::{SMatrix, UnitQuaternion, Vector3};
+use std::f32::consts::PI;
+
+/// A struct to hold trajectory data
+/// # Example
+/// ```
+/// use peng_quad::Trajectory;
+/// let initial_point = nalgebra::Vector3::new(0.0, 0.0, 0.0);
+/// let mut trajectory = Trajectory::new(initial_point);
+/// ```
+#[derive(Clone, Debug)]
+pub struct Trajectory {
+    /// A vector of 3D points
+    pub points: Vec<Vector3<f32>>,
+    /// The last point that was logged
+    pub last_logged_point: Vector3<f32>,
+    /// The minimum distance between points to log
+    pub min_distance_threadhold: f32,
+}
+/// Implement the Trajectory struct
+impl Trajectory {
+    /// Create a new Trajectory instance
+    /// # Arguments
+    /// * `initial_point` - The initial point to add to the trajectory
+    /// # Returns
+    /// * A new Trajectory instance
+    /// # Example
+    /// ```
+    /// use peng_quad::Trajectory;
+    /// let initial_point = nalgebra::Vector3::new(0.0, 0.0, 0.0);
+    /// let mut trajectory = Trajectory::new(initial_point);
+    /// ```
+    pub fn new(initial_point: Vector3<f32>) -> Self {
+        Self {
+            points: vec![initial_point],
+            last_logged_point: initial_point,
+            min_distance_threadhold: 0.05,
+        }
+    }
+    /// Add a point to the trajectory if it is further than the minimum distance threshold
+    /// # Arguments
+    /// * `point` - The point to add
+    /// # Returns
+    /// * `true` if the point was added, `false` otherwise
+    /// # Example
+    /// ```
+    /// use peng_quad::Trajectory;
+    /// let mut trajectory = Trajectory::new(nalgebra::Vector3::new(0.0, 0.0, 0.0));
+    /// let point = nalgebra::Vector3::new(1.0, 0.0, 0.0);
+    /// assert_eq!(trajectory.add_point(point), true);
+    /// assert_eq!(trajectory.add_point(point), false);
+    /// ```
+    pub fn add_point(&mut self, point: Vector3<f32>) -> bool {
+        if (point - self.last_logged_point).norm() > self.min_distance_threadhold {
+            self.points.push(point);
+            self.last_logged_point = point;
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// Enum representing different types of trajectory planners
 /// # Example

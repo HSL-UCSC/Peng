@@ -1,5 +1,5 @@
 #![allow(clippy::all, dead_code, unused_variables)]
-use crate::config;
+use crate::config::{Betaflight, QuadrotorConfig, SimulationConfig};
 use crate::quadrotor::{QuadrotorInterface, QuadrotorState};
 use crate::SimulationError;
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
@@ -19,9 +19,9 @@ pub struct BetaflightQuad {
     /// Initial State
     pub initial_state: Option<QuadrotorState>,
     /// Config
-    pub simulation_config: config::SimulationConfig,
+    pub simulation_config: SimulationConfig,
     /// Configured physical parameters
-    pub config: config::Betaflight,
+    pub config: Betaflight,
     /// Previous Thrust
     pub previous_thrust: f32,
     /// Quadrotor sample mutex
@@ -31,8 +31,8 @@ pub struct BetaflightQuad {
 
 impl BetaflightQuad {
     pub fn new(
-        simulation_config: config::SimulationConfig,
-        config: config::Betaflight,
+        simulation_config: SimulationConfig,
+        config: Betaflight,
     ) -> Result<Self, SimulationError> {
         #[cfg(feature = "vicon")]
         let consumer = if cfg!(feature = "vicon") {
@@ -275,7 +275,7 @@ impl QuadrotorInterface for BetaflightQuad {
         Ok((self.state.acceleration, self.state.angular_velocity))
     }
 
-    fn parameters(&self) -> crate::config::QuadrotorConfig {
+    fn parameters(&self) -> QuadrotorConfig {
         self.config.quadrotor_config.clone()
     }
 }

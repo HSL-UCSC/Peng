@@ -1,10 +1,11 @@
 #![allow(dead_code, unused_variables)]
-use crate::config::{self};
+use crate::config;
 use crate::environment::Maze;
+use crate::planners::Trajectory;
 use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
 use crate::sync::WorkerSync;
-use crate::{SimulationError, Trajectory};
+use crate::SimulationError;
 use colored::Colorize;
 use nalgebra::{Matrix3, Rotation3, UnitQuaternion, Vector3};
 use rayon::prelude::*;

@@ -1,15 +1,12 @@
 mod betaflight_quad;
 mod liftoff_quad;
 mod logger;
-// mod quadrotor_factory;
 mod sync;
 
 use futures::future::try_join_all;
 use logger::RerunLogger;
 use nalgebra::Vector3;
-use peng_quad::environment::Maze;
-use peng_quad::*;
-use quadrotor::build_quadrotor;
+use peng_quad::{config, environment, planners, quadrotor, sensors, SimulationError};
 use rerun::external::log;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -39,7 +36,7 @@ async fn main() -> Result<(), SimulationError> {
     info!(plog, "Use rerun.io: {}", config.use_rerun);
     info!(plog, "Using quadrotor: {:?}", config.quadrotor);
 
-    let maze = Maze::new(
+    let maze = environment::Maze::new(
         config.maze.lower_bounds,
         config.maze.upper_bounds,
         config.maze.num_obstacles,
@@ -153,17 +150,18 @@ fn quadrotor_worker(
     quadrotor_config: config::QuadrotorConfigurations,
     sync: Arc<WorkerSync>,
     rerun_logger: RerunLogger,
-    maze_watch: tokio::sync::watch::Receiver<Maze>,
+    maze_watch: tokio::sync::watch::Receiver<environment::Maze>,
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
     let handle = tokio::spawn(async move {
-        let (mut quad, mass) =
-            build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
-        let mut planner_manager = PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
-        let planner_config: Vec<PlannerStepConfig> = config
+        let (mut quad, mass) = quadrotor::build_quadrotor(&config, &quadrotor_config)
+            .expect("failed to build quadrotor");
+        let mut planner_manager =
+            planners::PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
+        let planner_config: Vec<planners::PlannerStepConfig> = config
             .planner_schedule
             .iter()
-            .map(|step| PlannerStepConfig {
+            .map(|step| planners::PlannerStepConfig {
                 step: step.step,
                 planner_type: step.planner_type.clone(),
                 params: step.params.clone(),
@@ -175,7 +173,7 @@ fn quadrotor_worker(
         log::info!("Quadrotor: {:?} {:?}", mass, config.simulation.gravity);
         let pos_gains = config.pid_controller.pos_gains;
         let att_gains = config.pid_controller.att_gains;
-        let mut controller = PIDController::new(
+        let mut controller = peng_quad::PIDController::new(
             [pos_gains.kp, pos_gains.kd, pos_gains.ki],
             [att_gains.kp, att_gains.kd, att_gains.ki],
             config.pid_controller.pos_max_int,
@@ -196,7 +194,7 @@ fn quadrotor_worker(
 
             let time = simulation_period * step as f32;
             let maze = maze_watch.borrow().clone();
-            update_planner(
+            planners::update_planner(
                 &mut planner_manager,
                 step as usize,
                 time,
@@ -313,8 +311,8 @@ fn maze_worker(
     _id: String,
     config: &config::SimulationConfig,
     sync: Arc<WorkerSync>,
-    tx: tokio::sync::watch::Sender<Maze>,
-    maze: Maze,
+    tx: tokio::sync::watch::Sender<environment::Maze>,
+    maze: environment::Maze,
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let dt = 1_f32 / (config.simulation_frequency as f32);
     let mut maze = maze.clone();
