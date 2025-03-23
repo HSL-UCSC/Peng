@@ -29,14 +29,11 @@
         
         devShell = with pkgs; mkShell {
           buildInputs = [
-            rust-analyzer
             cargo
             clippy
             rustc
-            rustc
             rustfmt
             pre-commit
-            rustPackages.clippy
             rerun
             protobuf
           ] ++ osSpecificDeps;  # Append OS-specific dependencies
