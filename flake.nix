@@ -8,60 +8,61 @@
   };
 
   outputs = { self, nixpkgs, utils, naersk }:
-    utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs { inherit system; };
-        naersk-lib = pkgs.callPackage naersk { };
+    utils.lib.eachDefaultSystem (system: let
+      pkgs = import nixpkgs { inherit system; };
+      naersk-lib = pkgs.callPackage naersk { };
+    in rec {
+      # This builds your package for running the code.
+      packages.default = naersk-lib.buildPackage ./.;
 
-        # Define OS-specific dependencies
-        osSpecificDeps = if pkgs.stdenv.isLinux then [
-          pkgs.systemd
-          pkgs.pkg-config
-        ] else if pkgs.stdenv.isDarwin then [
-          pkgs.darwin.apple_sdk.frameworks.CoreServices  # Needed for macOS system integration
-          pkgs.darwin.apple_sdk.frameworks.CoreServices  # For macOS system integration
-          pkgs.darwin.apple_sdk.frameworks.IOKit           # For hardware communication
-        ] else [];
+      # Dev shell for just running the code, with a minimal set of Rust tools.
+      devShells.run = with pkgs; mkShell {
+        buildInputs = [
+          cargo
+          clippy
+          rustc
+          rustfmt
+          pre-commit
+          rerun
+          protobuf
+        ];
+      };
 
-      in
-      {
-        defaultPackage = naersk-lib.buildPackage ./.;
-        
-        devShell = with pkgs; mkShell {
-          buildInputs = [
-            cargo
-            clippy
-            rustc
-            rustfmt
-            pre-commit
-            rerun
-            protobuf
-          ] ++ osSpecificDeps;  # Append OS-specific dependencies
+      # Dev shell geared toward development, leaving your system's Neovim in place.
+      devShells.dev = with pkgs; mkShell {
+        buildInputs = [
+          cargo
+          clippy
+          rustc
+          rustfmt
+          pre-commit
+          rerun
+          protobuf
+        ];
+        shellHook = ''
+          export GIT_CONFIG=$PWD/.gitconfig
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
+          ${if pkgs.stdenv.isLinux then ''
+            export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
+          '' else ""}
+          
+          ${if pkgs.stdenv.isDarwin then ''
+            echo "Running on macOS, using Darwin-specific dependencies."
+          '' else ""}
+          
+          echo "Entering Rust development environment..."
+          cargo fetch # Pre-fetch dependencies
 
-          RUST_SRC_PATH = rustPlatform.rustLibSrc;
+          Start Zsh if not already the active shell
+          if [ "$SHELL" != "$(command -v zsh)" ]; then
+            export SHELL="$(command -v zsh)"
+            exec zsh
+          fi
+        '';
+      };
 
-          shellHook = ''
-            export GIT_CONFIG=$PWD/.gitconfig
-            export CARGO_NET_GIT_FETCH_WITH_CLI=true
-            export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
-            ${if pkgs.stdenv.isLinux then ''
-              export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
-            '' else ""}
-            
-            ${if pkgs.stdenv.isDarwin then ''
-              echo "Running on macOS, using Darwin-specific dependencies."
-            '' else ""}
-            
-            echo "Entering Rust development environment..."
-            cargo fetch # Pre-fetch dependencies
-
-            # Start Zsh if not already the active shell
-            if [ "$SHELL" != "$(command -v zsh)" ]; then
-              export SHELL="$(command -v zsh)"
-              exec zsh
-            fi
-          '';
-        };
-      }
-    );
+      # Set the default dev shell to "run"
+      devShell = devShells.run;
+    });
 }
