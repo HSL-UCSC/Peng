@@ -5,6 +5,9 @@ use crate::{parse_f32, parse_vector3};
 use nalgebra::{SMatrix, UnitQuaternion, Vector3};
 use std::f32::consts::PI;
 
+// #[cfg(feature = "hyrl")]
+use crate::hyrl::obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient;
+
 /// A struct to hold trajectory data
 /// # Example
 /// ```
@@ -90,8 +93,9 @@ pub enum PlannerType {
     ObstacleAvoidance(ObstacleAvoidancePlanner),
     /// Minimum snap waypoint planner
     MinimumSnapWaypoint(MinimumSnapWaypointPlanner),
-    ///// Minimum snap waypoint planner
-    //HeadingPlanner(MinimumSnapWaypointPlanner),
+    /// Minimum snap waypoint planner
+    #[cfg(feature = "hyrl")]
+    HyRL(HyRLPlanner),
 }
 /// Implementation of the planner type
 impl PlannerType {
@@ -128,6 +132,8 @@ impl PlannerType {
             PlannerType::Landing(p) => p.plan(current_position, current_velocity, time),
             PlannerType::ObstacleAvoidance(p) => p.plan(current_position, current_velocity, time),
             PlannerType::MinimumSnapWaypoint(p) => p.plan(current_position, current_velocity, time),
+            #[cfg(feature = "hyrl")]
+            PlannerType::HyRL(p) => p.plan(current_position, current_velocity, time),
         }
     }
     /// Checks if the current trajectory is finished
@@ -161,6 +167,8 @@ impl PlannerType {
             PlannerType::Landing(p) => p.is_finished(current_position, time),
             PlannerType::ObstacleAvoidance(p) => p.is_finished(current_position, time),
             PlannerType::MinimumSnapWaypoint(p) => p.is_finished(current_position, time),
+            #[cfg(feature = "hyrl")]
+            PlannerType::HyRL(p) => p.is_finished(current_position, time),
         }
     }
 }
@@ -1080,6 +1088,81 @@ impl Planner for MinimumSnapWaypointPlanner {
             && (current_position - last_waypoint).norm() < 0.1)
     }
 }
+
+/// Planner for HyRL obstacle avoidance for a single fixed obstacle
+/// # Example
+/// ```
+/// use nalgebra::Vector3;
+/// use peng_quad::MinimumJerkLinePlanner;
+/// let hyrl_planner = HyRLPlanner {
+///     start_position: Vector3::new(0.0, 0.0, 0.0),
+///     end_position: Vector3::new(1.0, 1.0, 1.0),
+///     start_time: 0.0,
+///     duration: 1.0,
+/// };
+/// ```
+pub struct HyRLPlanner {
+    /// Starting position of the trajectory
+    pub start_position: Vector3<f32>,
+    /// Ending position of the trajectory
+    pub end_position: Vector3<f32>,
+    ///// Starting yaw angle
+    //pub start_yaw: f32,
+    ///// Ending yaw angle
+    //pub end_yaw: f32,
+    /// Start time of the trajectory
+    pub start_time: f32,
+    /// Duration of the trajectory
+    pub duration: f32,
+    pub client: Option<ObstacleAvoidanceServiceClient<tonic::transport::Channel>>,
+}
+
+impl HyRLPlanner {
+    fn new(
+        start_position: Vector3<f32>,
+        end_position: Vector3<f32>,
+        start_time: f32,
+        duration: f32,
+        client: Option<ObstacleAvoidanceServiceClient<tonic::transport::Channel>>,
+        // gRPC client for HyRL service
+    ) -> Self {
+        Self {
+            start_position,
+            end_position,
+            start_time,
+            duration,
+            client,
+        }
+    }
+}
+
+/// Implementation of the planner trait for HyRL
+impl Planner for HyRLPlanner {
+    fn plan(
+        &self,
+        current_position: Vector3<f32>,
+        _current_velocity: Vector3<f32>,
+        time: f32,
+    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+        println!("Current Position: {:?}", current_position);
+        // TODO: call HyRL planner serveice
+        (
+            Vector3::<f32>::new(0.0, 0.0, 0.0),
+            Vector3::<f32>::new(0.0, 0.0, 0.0),
+            0.0,
+        )
+    }
+
+    fn is_finished(
+        &self,
+        _current_position: Vector3<f32>,
+        _time: f32,
+    ) -> Result<bool, SimulationError> {
+        Ok((_current_position - self.end_position).norm() < 0.01
+            && _time >= self.start_time + self.duration)
+    }
+}
+
 #[derive(Debug)]
 /// Represents a step in the planner schedule.
 /// # Example
@@ -1295,6 +1378,14 @@ pub fn create_planner(
             MinimumSnapWaypointPlanner::new(waypoints, yaws, segment_times, time)
                 .map(PlannerType::MinimumSnapWaypoint)
         }
+        #[cfg(feature = "hyrl")]
+        "HyRL" => Ok(PlannerType::HyRL(HyRLPlanner {
+            start_position: quad_state.position,
+            end_position: quad_state.position,
+            start_time: time,
+            duration: parse_f32(params, "duration")?,
+            client: None,
+        })),
         "Landing" => Ok(PlannerType::Landing(LandingPlanner {
             start_position: quad_state.position,
             start_time: time,
