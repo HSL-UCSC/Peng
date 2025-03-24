@@ -5,7 +5,7 @@ use crate::{parse_f32, parse_vector3};
 use nalgebra::{SMatrix, UnitQuaternion, Vector3};
 use std::f32::consts::PI;
 
-// #[cfg(feature = "hyrl")]
+#[cfg(feature = "hyrl")]
 use crate::hyrl::obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient;
 
 /// A struct to hold trajectory data
@@ -1114,17 +1114,18 @@ pub struct HyRLPlanner {
     pub start_time: f32,
     /// Duration of the trajectory
     pub duration: f32,
+    #[cfg(feature = "hyrl")]
     pub client: Option<ObstacleAvoidanceServiceClient<tonic::transport::Channel>>,
 }
 
 impl HyRLPlanner {
+    #[cfg(feature = "hyrl")]
     fn new(
         start_position: Vector3<f32>,
         end_position: Vector3<f32>,
         start_time: f32,
         duration: f32,
         client: Option<ObstacleAvoidanceServiceClient<tonic::transport::Channel>>,
-        // gRPC client for HyRL service
     ) -> Self {
         Self {
             start_position,
@@ -1145,7 +1146,7 @@ impl Planner for HyRLPlanner {
         time: f32,
     ) -> (Vector3<f32>, Vector3<f32>, f32) {
         println!("Current Position: {:?}", current_position);
-        // TODO: call HyRL planner serveice
+        // TODO: call HyRL planner service
         (
             Vector3::<f32>::new(0.0, 0.0, 0.0),
             Vector3::<f32>::new(0.0, 0.0, 0.0),
