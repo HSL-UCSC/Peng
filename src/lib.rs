@@ -53,6 +53,11 @@ pub mod quadrotor;
 pub mod sensors;
 pub mod sync;
 
+#[cfg(feature = "hyrl")]
+pub mod hyrl {
+    include!(concat!(env!("OUT_DIR"), "/hyrl.v1.rs"));
+}
+
 use nalgebra::{Matrix3, Quaternion, Rotation3, UnitQuaternion, Vector3};
 use std::f32::consts::PI;
 
