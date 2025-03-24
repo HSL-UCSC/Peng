@@ -5,9 +5,13 @@
     naersk.url = "github:nix-community/naersk/master";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
+    oaapis = {
+      url = "github:friend0/ObstacleAvoidanceAPIs";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, utils, naersk }:
+  outputs = { self, nixpkgs, utils, naersk, oaapis }:
     utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs { inherit system; };
       naersk-lib = pkgs.callPackage naersk { };
@@ -26,6 +30,10 @@
           rerun
           protobuf
         ];
+        shellHook = ''
+          export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
+          echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
+        '';
       };
 
       # Dev shell geared toward development, leaving your system's Neovim in place.
@@ -43,6 +51,8 @@
           export GIT_CONFIG=$PWD/.gitconfig
           export CARGO_NET_GIT_FETCH_WITH_CLI=true
           export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
+          export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
+
           ${if pkgs.stdenv.isLinux then ''
             export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
           '' else ""}

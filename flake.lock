@@ -47,10 +47,27 @@
         "type": "github"
       }
     },
+    "oaapis": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1742788464,
+        "narHash": "sha256-I4dA+SQsI2kW7nsBrHfOUr5fkfjtmITV3tpB3r89zmY=",
+        "owner": "friend0",
+        "repo": "ObstacleAvoidanceAPIs",
+        "rev": "1d2272aed8358ca2b372f96c9bd8506e07857344",
+        "type": "github"
+      },
+      "original": {
+        "owner": "friend0",
+        "repo": "ObstacleAvoidanceAPIs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "naersk": "naersk",
         "nixpkgs": "nixpkgs_2",
+        "oaapis": "oaapis",
         "utils": "utils"
       }
     },
