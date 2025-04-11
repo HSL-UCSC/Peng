@@ -9,13 +9,25 @@ simulation:
   simulation_frequency: 250 # Frequency of physics simulation updates (Hz)
   log_frequency: 20 # Frequency of data logging (Hz)
   duration: 60.0 # Total duration of the simulation (seconds)
-  use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
-  use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
   gravity: 9.81 # Gravitational acceleration (m/s^2)
   real_time: true # Enable real time mode. If not enabled, sim will run in fast time.
+  use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
+  use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
+
+use_rk4_for_dynamics_update: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
+use_rk4_for_dynamics_control: false # Enable Runge-Kutta 4th order integration for dynamics, otherwise Euler integration is used
+
 
 quadrotor:
   type: "Betaflight"
+  mass: .050 # Mass of the quadrotor (kg)
+  gravity: 9.81 # Gravitational acceleration (m/s^2)
+  drag_coefficient: 0.800 # Aerodynamic drag coefficient
+  # Inertia matrix [Ixx, Ixy, Ixz, Iyx, Iyy, Iyz, Izx, Izy, Izz] (kg*m^2)
+  inertia_matrix: [5.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3]
+  max_thrust_kg: 0.223
+  arm_length_m: .065
+  yaw_torque_constant: .0052
   quadrotor_config:
     mass: .050 # Mass of the quadrotor (kg)
     gravity: 9.81 # Gravitational acceleration (m/s^2)
@@ -27,7 +39,7 @@ quadrotor:
     yaw_torque_constant: .0052
   subject_name: "mob7"
   # serial_port: "/dev/tty.usbserial-B001JE6N"
-  serial_port: "COM4"
+  serial_port: "COM6"
   baud_rate: 460800
 
 pid_controller:
