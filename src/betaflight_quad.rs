@@ -39,7 +39,7 @@ impl BetaflightQuad {
             let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
             let producer_clone = producer.clone();
             let config_clone = config.clone();
-            let subject_name = config.clone().id;
+            let subject_name = config.clone().quadrotor_config.id;
             tokio::spawn(async move {
                 let _ =
                     feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
@@ -242,7 +242,7 @@ impl QuadrotorInterface for BetaflightQuad {
         let acceleration_body = self.body_acceleration(self.previous_state.velocity, v_body, dt);
         self.state = QuadrotorState {
             time: dt,
-            state: peng_quad::quadrotor::State {
+            state: crate::quadrotor::State {
                 position: position,
                 velocity: v_body,
                 acceleration: acceleration_body,
