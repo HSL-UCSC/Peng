@@ -358,19 +358,53 @@ async fn feedback_loop(
     id: &str,
     tx: watch::Sender<Option<vicon_sys::ViconSubject>>,
 ) -> Result<(), SimulationError> {
-    let mut vicon = vicon_sys::sys::ViconSystem::new("localhost")
-        .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+    let mut vicon = vicon_sys::sys::ViconSystem::new(address)
+        .map_err(|e| {
+            println!("Failed to connect to VICON at {}: {}", address, e);
+            SimulationError::OtherError(e.to_string())
+        })?;
+    println!("Connected to Vicon at {}", address);
+
     loop {
-        // FIXME: vicon operating mode check block
-        if let Ok(subjects) = vicon.read_frame_subjects(vicon_sys::OutputRotation::Quaternion) {
-            // TODO: add search for all subjects
-            if let Some(sample) = subjects.first() {
-                if sample.name == id {
+        match vicon.read_frame_subjects(vicon_sys::OutputRotation::Quaternion) {
+            Ok(subjects) => {
+                // Print all subject names in the frame
+                let subject_names: Vec<&str> = subjects.iter().map(|s| s.name.as_str()).collect();
+                println!("Received frame with subjects: {:?}", subject_names);
+
+                // Look for the desired subject (e.g., "mob8")
+                if let Some(sample) = subjects.iter().find(|s| s.name == id) {
+                    // Print position (origin is [x, y, z])
+                    let position = sample.origin;
+                    println!(
+                        "Subject {} position: x={:.3}, y={:.3}, z={:.3} (meters)",
+                        id, position[0], position[1], position[2]
+                    );
+
+                    // Print quaternion rotation
+                    if let vicon_sys::RotationType::Quaternion(q) = &sample.rotation {
+                        println!(
+                            "Subject {} quaternion: w={:.3}, i={:.3}, j={:.3}, k={:.3}",
+                            id, q.w, q.i, q.j, q.k
+                        );
+                    } else {
+                        println!("Subject {} rotation: Non-quaternion format", id);
+                    }
+
+                    // Send the data through the watch channel
                     tx.send(Some(sample.clone()))
-                        .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+                        .map_err(|e| {
+                            println!("Failed to send Vicon data: {}", e);
+                            SimulationError::OtherError(e.to_string())
+                        })?;
+                } else {
+                    println!("Subject {} not found in frame", id);
                 }
             }
-        };
+            Err(e) => {
+                println!("Error reading Vicon frame: {}", e);
+            }
+        }
     }
 }
 
