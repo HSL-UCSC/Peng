@@ -32,9 +32,9 @@ quadrotor:
 
 pid_controller:
   pos_gains: # PID gains for position control
-    kp: [7.1, 7.1, 12.0] # Proportional gains [x, y, z]
+    kp: [7.1, 7.1, 6.0] # Proportional gains [x, y, z]
     kd: [2.4, 2.4, 7.7] # Derivative gains [x, y, z]
-    ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
+    ki: [0.0, 0.0, 0.1] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
     kp: [1.5, 1.5, 1.0] # Proportional gains [roll, pitch, yaw]
     kd: [0.13, 0.13, 0.1] # Derivative gains [roll, pitch, yaw]
