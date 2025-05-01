@@ -138,7 +138,7 @@ pub struct QuadrotorConfig {
 impl Default for QuadrotorConfig {
     fn default() -> Self {
         QuadrotorConfig {
-            id: "quadrotor".to_string(),
+            id: "mob7".to_string(),
             mass: 1.3,
             drag_coefficient: 0.000,
             inertia_matrix: [3.04e-3, 0.0, 0.0, 0.0, 4.55e-3, 0.0, 0.0, 0.0, 2.82e-3],
@@ -211,7 +211,7 @@ impl Default for Betaflight {
     fn default() -> Self {
         Betaflight {
             quadrotor_config: QuadrotorConfig::default(),
-            vicon_address: String::from("0.0.0.0:51001"),
+            vicon_address: String::from("localhost"),
             connection_timeout: tokio::time::Duration::from_secs(5 * 60),
             max_retry_delay: tokio::time::Duration::from_secs(30),
             serial_port: None,
