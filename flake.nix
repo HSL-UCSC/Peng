@@ -18,15 +18,16 @@
           pkgs.systemd
           pkgs.pkg-config
         ] else if pkgs.stdenv.isDarwin then [
-          pkgs.darwin.apple_sdk.frameworks.CoreServices  # Needed for macOS system integration
-          pkgs.darwin.apple_sdk.frameworks.IOKit         # Required for hardware communication
+          pkgs.darwin.apple_sdk.frameworks.CoreServices
+          pkgs.darwin.apple_sdk.frameworks.IOKit
         ] else [];
-
       in
       {
+        # Default package build
         defaultPackage = naersk-lib.buildPackage ./.;
-        
-        devShell = with pkgs; mkShell {
+
+        # Default shell - minimal
+        devShells.default = with pkgs; mkShell {
           buildInputs = [
             cargo
             clippy
@@ -36,9 +37,28 @@
             rustPackages.clippy
             rerun
             protobuf
-          ] ++ osSpecificDeps;  # Append OS-specific dependencies
+            neovim # Include neovim explicitly here
+          ] ++ osSpecificDeps;
 
-          RUST_SRC_PATH = rustPlatform.rustLibSrc;
+          shellHook = ''
+            echo "Entering default Rust shell..."
+          '';
+        };
+
+        # Full development shell - zsh based
+        devShells.dev = with pkgs; mkShell {
+          buildInputs = [
+            cargo
+            clippy
+            rustc
+            rustfmt
+            pre-commit
+            rustPackages.clippy
+            rerun
+            protobuf
+          ] ++ osSpecificDeps;
+
+          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
           shellHook = ''
             export GIT_CONFIG=$PWD/.gitconfig
@@ -52,12 +72,19 @@
             ${if pkgs.stdenv.isDarwin then ''
               echo "Running on macOS, using Darwin-specific dependencies."
             '' else ""}
-            
-            echo "Entering Rust development environment..."
-            cargo fetch # Pre-fetch dependencies
 
-            if [ -z "$ZSH_VERSION" ] && [ -z "$BASH_VERSION" ]; then
-              export SHELL="$(which zsh || which bash)"
+            echo "Entering full development environment (dev)..."
+
+            # If inside nix shell, make sure to stay in zsh
+            if [ -n "$ZSH_VERSION" ]; then
+              export SHELL=$(which zsh)
+            else
+              export SHELL=$(which zsh || echo $SHELL)
+            fi
+
+            # Start a login zsh if needed (only if not already inside one)
+            if [ -z "$ZSH_VERSION" ]; then
+              exec $SHELL -l
             fi
           '';
         };
