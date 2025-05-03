@@ -321,6 +321,16 @@ impl FileLogger {
     }
 }
 
+fn make_timestamped_rrd_path(prefix: &str) -> Result<PathBuf, String> {
+    let ts = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let filename = format!("{}_{}.rrd", prefix, ts);
+    let mut path = PathBuf::from("logs");
+    create_dir_all(&path).map_err(|_| "Failed to create log directory")?;
+    path.push(filename);
+    File::create(&path).map_err(|_| "Failed to create log file")?;
+    Ok(path)
+}
+
 #[derive(Clone)]
 pub struct RerunLogger {
     tx: tokio::sync::mpsc::Sender<LogMessage>,
