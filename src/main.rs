@@ -5,7 +5,7 @@ mod logger;
 mod sync;
 
 use futures::future::try_join_all;
-use logger::RerunLogger;
+use logger::{FileLogger, RerunLogger};
 use nalgebra::Vector3;
 use peng_quad::environment::Maze;
 use peng_quad::*;
@@ -35,7 +35,8 @@ async fn main() -> Result<(), SimulationError> {
         info!(plog, "Loading configuration: {}", args[1]);
         config_str = &args[1];
     }
-    let config = config::Config::from_yaml(config_str).expect("Failed to load configuration.");
+    let config: Arc<config::Config> =
+        Arc::new(config::Config::from_yaml(config_str).expect("Failed to load configuration."));
     info!(plog, "Use rerun.io: {}", config.use_rerun);
     info!(plog, "Using quadrotor: {:?}", config.quadrotor);
 
@@ -83,6 +84,13 @@ async fn main() -> Result<(), SimulationError> {
             .init();
         (None, None)
     };
+    let (file_logger_handle, file_logger) = if let Some(file_logger) = &config.file_logger {
+        let (file_logger_handle, file_logger) =
+            logger::FileLogger::new(file_logger.as_ref(), worker_sync.clone())?;
+        (Some(file_logger_handle), Some(file_logger))
+    } else {
+        (None, None)
+    };
 
     let maze_sync_clone = Arc::clone(&worker_sync);
     let maze_handle = maze_worker(
@@ -112,17 +120,20 @@ async fn main() -> Result<(), SimulationError> {
     let rr = rerun_logger.unwrap();
     let quad_handles: Vec<tokio::task::JoinHandle<()>> = config
         .quadrotor
-        .iter()
+        .clone()
+        .into_iter()
         .map(|quadrotor_config| {
             let quadrotor_sync_clone = Arc::clone(&worker_sync);
+            // TODO: need a file logger per quad
             quadrotor_worker(
-                config.clone(),
+                Arc::clone(&config),
                 quadrotor_config.clone(),
                 quadrotor_sync_clone,
                 rr.clone(),
+                file_logger.clone(),
                 rx_maze.clone(),
             )
-            .unwrap()
+            .expect("Filed to create quadrotor worker")
         })
         .collect();
 
@@ -141,18 +152,31 @@ async fn main() -> Result<(), SimulationError> {
     try_join_all(quad_handles)
         .await
         .expect("failed to await quadrotor handles");
+
+    println!("Quads Joined...");
     rerun_handle
         .unwrap()
         .await
         .expect("failed to await rerun handle");
+
+    println!("Rerun Logger Joined...");
+
+    if file_logger.is_some() {
+        drop(file_logger);
+    }
+    if let Some(handle) = file_logger_handle {
+        handle.await.expect("failed to await rerun handle");
+    }
+    println!("File Logger Joined...");
     Ok(())
 }
 
 fn quadrotor_worker(
-    config: config::Config,
+    config: Arc<config::Config>,
     quadrotor_config: config::QuadrotorConfigurations,
     sync: Arc<WorkerSync>,
     rerun_logger: RerunLogger,
+    mut file_logger: Option<FileLogger>,
     maze_watch: tokio::sync::watch::Receiver<Maze>,
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
@@ -243,6 +267,27 @@ fn quadrotor_worker(
                 .observe(simulation_period)
                 .expect("error getting latest state estimate");
 
+            if let Some(file_logger) = file_logger.as_mut() {
+                file_logger
+                    .log(
+                        time,
+                        quadrotor_config.clone(),
+                        quad_state.clone(),
+                        logger::DesiredState {
+                            position: desired_position,
+                            velocity: desired_velocity,
+                            orientation: desired_orientation,
+                        },
+                        logger::ControlOutput {
+                            torque,
+                            thrust,
+                            thrust_out,
+                            torque_out,
+                        },
+                    )
+                    .expect("Failed to log state with FileLogger");
+            }
+
             if (step as usize)
                 % (config.simulation.simulation_frequency / config.simulation.log_frequency)
                 == 0
@@ -264,7 +309,7 @@ fn quadrotor_worker(
                             torque_out,
                         },
                     )
-                    .expect("failed to log state");
+                    .expect("Failed to log state with RerunLogger");
             }
             sync.end_barrier.wait().await;
         }
