@@ -17,7 +17,7 @@ simulation:
 quadrotor:
   type: "Betaflight"
   quadrotor_config:
-    mass: .065 # Mass of the quadrotor (kg)
+    mass: .04 # Mass of the quadrotor (kg)
     gravity: 9.81 # Gravitational acceleration (m/s^2)
     drag_coefficient: 0.800 # Aerodynamic drag coefficient
     # Inertia matrix [Ixx, Ixy, Ixz, Iyx, Iyy, Iyz, Izx, Izy, Izz] (kg*m^2)
@@ -85,24 +85,24 @@ planner_schedule:
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       target_yaw: 0.0 # Target end yaw angle (rad)
 
-  # Circular trajectory
-  - step: 3000
-    planner_type: Circle
-    params:
-      center: [0.0, 0.0, 0.5] # Center of the circle [x, y, z] (m)
-      radius: 1.0 # Radius of the circle (m)
-      angular_velocity: 1.0 # Angular velocity (rad/s)
-      duration: 26.5 # Duration of the trajectory (s)
-      ramp_time: 2.0 # Time for smooth transition (s)
-  
-  # Minimum Jerk Line trajectory
-  - step: 10000 # Simulation step in ms to start this planner
-    planner_type: MinimumJerkLine
-    params:
-      start_position: [1.0, 0.0, 0.5] # Target start position [x, y, z] (m)
-      end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
-      end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 4.0 # Duration of the trajectory (s)
+  #   # Minimum Jerk Line trajectory
+  # - step: 4000 # Simulation step in ms to start this planner
+  #   planner_type: MinimumJerkLine
+  #   params:
+  #     start_position: [0.0, 0.0, 0.8] # Target start position [x, y, z] (m)
+  #     end_position: [0.0, 2.0, 0.8] # Target end position [x, y, z] (m)
+  #     end_yaw: 0.0 # Target end yaw angle (rad)
+  #     duration: 4.0 # Duration of the trajectory (s)
+
+  # # Circular trajectory
+  # - step: 3000
+  #   planner_type: Circle
+  #   params:
+  #     center: [0.0, 0.0, 0.8] # Center of the circle [x, y, z] (m)
+  #     radius: 1.0 # Radius of the circle (m)
+  #     angular_velocity: 1.0 # Angular velocity (rad/s)
+  #     duration: 26.5 # Duration of the trajectory (s)
+  #     ramp_time: 2.0 # Time for smooth transition (s)
 
   # Landing trajectory
   - step: 13000
