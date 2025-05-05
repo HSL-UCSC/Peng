@@ -181,8 +181,8 @@ fn quadrotor_worker(
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
     let handle = tokio::spawn(async move {
-        let (mut quad, mass) = quadrotor::build_quadrotor(&config, &quadrotor_config)
-            .expect("failed to build quadrotor");
+        let (mut quad, mass) =
+            build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
         let mut planner_manager =
             planners::PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
         let planner_config: Vec<planners::PlannerStepConfig> = config
