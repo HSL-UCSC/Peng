@@ -5,7 +5,7 @@ use crate::planners::Trajectory;
 use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
 use crate::sync::WorkerSync;
-use crate::{SimulationError, Trajectory};
+use crate::SimulationError;
 use chrono::Local;
 use colored::Colorize;
 use csv::Writer;
