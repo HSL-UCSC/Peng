@@ -52,6 +52,8 @@ pub struct Config {
 pub struct PlannerStep {
     /// Step number that the planner should be executed (Unit: ms)
     pub step: usize,
+    /// Time that the planner should become active (Unit: ms)
+    pub time: f32,
     /// Type of planner to use
     pub planner_type: String,
     /// Parameters for the planner

@@ -190,6 +190,7 @@ fn quadrotor_worker(
             .iter()
             .map(|step| planners::PlannerStepConfig {
                 step: step.step,
+                time: Some(step.time),
                 planner_type: step.planner_type.clone(),
                 params: step.params.clone(),
             })

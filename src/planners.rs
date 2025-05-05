@@ -1233,6 +1233,8 @@ impl Planner for HyRLPlanner {
 pub struct PlannerStepConfig {
     /// The simulation step at which this planner should be activated (in ms unit).
     pub step: usize,
+    /// The simulation time at which this planner should be activated (in ms unit).
+    pub time: Option<f32>,
     /// The type of planner to use for this step.
     pub planner_type: String,
     /// Additional parameters for the planner, stored as a YAML value.
@@ -1287,6 +1289,16 @@ pub fn update_planner(
     obstacles: &[Obstacle],
     planner_config: &[PlannerStepConfig],
 ) -> Result<(), SimulationError> {
+    use std::f32;
+    // TODO: we should switch if the time delta is less than a single time step
+    if let Some(ps) = planner_config
+        .iter()
+        .find(|ps| ps.time.map(|t| t >= time).unwrap_or(false))
+    {
+        log::info!("Time: {:.2} s,\tSwitch {}", time, ps.planner_type);
+        planner_manager.set_planner(create_planner(ps, quad_state, time, obstacles)?);
+        return Ok(());
+    }
     if let Some(planner_step) = planner_config.iter().find(|s| s.step == step) {
         log::info!("Time: {:.2} s,\tSwitch {}", time, planner_step.planner_type);
         planner_manager.set_planner(create_planner(planner_step, quad_state, time, obstacles)?);
