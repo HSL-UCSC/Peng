@@ -36,6 +36,9 @@ pub struct Config {
     pub rerun_blueprint: String,
     /// Use rerun.io for recording
     pub use_rerun: bool,
+    /// When using rerun, also log rerun data to an RRD file. The provided string will be used as
+    /// the file prefix.
+    pub file_logger: Option<String>,
     /// Render depth
     pub render_depth: bool,
     /// MultiThreading depth rendering
