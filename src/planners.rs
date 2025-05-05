@@ -4,6 +4,14 @@ use crate::SimulationError;
 use crate::{parse_f32, parse_vector3};
 use nalgebra::{SMatrix, UnitQuaternion, Vector3};
 use std::f32::consts::PI;
+use tonic::transport::Channel;
+
+#[cfg(feature = "hyrl")]
+pub mod hyrl {
+    pub mod v1 {
+        tonic::include_proto!("hyrl.v1");
+    }
+}
 
 #[cfg(feature = "hyrl")]
 use crate::hyrl::obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient;
@@ -1104,34 +1112,65 @@ impl Planner for MinimumSnapWaypointPlanner {
 pub struct HyRLPlanner {
     /// Starting position of the trajectory
     pub start_position: Vector3<f32>,
+    /// Starting yaw angle
+    pub start_yaw: f32,
     /// Ending position of the trajectory
-    pub end_position: Vector3<f32>,
-    ///// Starting yaw angle
-    //pub start_yaw: f32,
-    ///// Ending yaw angle
-    //pub end_yaw: f32,
+    pub target_position: Vector3<f32>,
+    /// Ending yaw angle
+    pub end_yaw: f32,
     /// Start time of the trajectory
     pub start_time: f32,
     /// Duration of the trajectory
     pub duration: f32,
-    #[cfg(feature = "hyrl")]
-    pub client: Option<ObstacleAvoidanceServiceClient<tonic::transport::Channel>>,
+    /// Waypoints for this trajectory
+    pub waypoints: Vec<Vector3<f32>>,
+    pub client: Option<ObstacleAvoidanceServiceClient<Channel>>,
 }
 
 impl HyRLPlanner {
     #[cfg(feature = "hyrl")]
-    fn new(
+    pub fn new(
         start_position: Vector3<f32>,
-        end_position: Vector3<f32>,
+        start_yaw: f32,
+        target_position: Vector3<f32>,
         start_time: f32,
         duration: f32,
-        client: Option<ObstacleAvoidanceServiceClient<tonic::transport::Channel>>,
+        channel: Channel,
     ) -> Self {
+        // build the real client from the channel:
+        let client = Some(ObstacleAvoidanceServiceClient::new(channel));
+
         Self {
             start_position,
-            end_position,
+            start_yaw,
+            target_position,
+            end_yaw: start_yaw,
             start_time,
             duration,
+            waypoints: Vec::new(),
+            client,
+        }
+    }
+
+    #[cfg(not(feature = "hyrl"))]
+    pub fn new(
+        start_position: Vector3<f32>,
+        start_yaw: f32,
+        target_position: Vector3<f32>,
+        start_time: f32,
+        duration: f32,
+    ) -> Self {
+        // no client when feature disabled
+        let client = None;
+
+        Self {
+            start_position,
+            start_yaw,
+            target_position,
+            end_yaw: start_yaw,
+            start_time,
+            duration,
+            waypoints: Vec::new(),
             client,
         }
     }
@@ -1154,13 +1193,29 @@ impl Planner for HyRLPlanner {
         )
     }
 
+    /// Returns true once we have both (a) crossed the half‐plane
+    /// at the final waypoint and (b) run at least the full duration.
     fn is_finished(
         &self,
-        _current_position: Vector3<f32>,
+        current_position: Vector3<f32>,
         _time: f32,
     ) -> Result<bool, SimulationError> {
-        Ok((_current_position - self.end_position).norm() < 0.01
-            && _time >= self.start_time + self.duration)
+        if self.waypoints.len() < 2 {
+            return Err(SimulationError::OtherError(
+                "Not enough waypoints to define half‐plane".into(),
+            ));
+        }
+
+        // Last two waypoints
+        let last_idx = self.waypoints.len() - 1;
+        let p_prev = self.waypoints[last_idx - 1];
+        let p_last = self.waypoints[last_idx];
+
+        // Unit normal pointing along the path direction
+        let n = (p_last - p_prev).normalize();
+
+        // Check 1: Have we crossed the plane through p_last with normal n?
+        Ok((current_position - p_last).dot(&n) >= 0.0)
     }
 }
 
@@ -1382,9 +1437,12 @@ pub fn create_planner(
         #[cfg(feature = "hyrl")]
         "HyRL" => Ok(PlannerType::HyRL(HyRLPlanner {
             start_position: quad_state.position,
-            end_position: quad_state.position,
+            start_yaw: quad_state.orientation.euler_angles().2,
+            target_position: quad_state.position,
+            end_yaw: quad_state.orientation.euler_angles().2,
             start_time: time,
             duration: parse_f32(params, "duration")?,
+            waypoints: vec![],
             client: None,
         })),
         "Landing" => Ok(PlannerType::Landing(LandingPlanner {
