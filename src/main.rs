@@ -1,12 +1,15 @@
 mod betaflight_quad;
 mod liftoff_quad;
 mod logger;
+// mod quadrotor_factory;
 mod sync;
 
 use futures::future::try_join_all;
 use logger::{FileLogger, RerunLogger};
 use nalgebra::Vector3;
-use peng_quad::{config, environment, planners, quadrotor, sensors, SimulationError};
+use peng_quad::environment::Maze;
+use peng_quad::*;
+use quadrotor::build_quadrotor;
 use rerun::external::log;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
