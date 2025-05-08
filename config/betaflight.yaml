@@ -32,7 +32,7 @@ quadrotor:
 
 pid_controller:
   pos_gains: # PID gains for position control
-    kp: [3.5, 3.5, 11.0] # Proportional gains [x, y, z]
+    kp: [5.5, 5.5, 17.0] # Proportional gains [x, y, z]
     kd: [4.5, 4.5, 5.7] # Derivative gains [x, y, z]
     ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
@@ -103,6 +103,7 @@ planner_schedule:
   #     angular_velocity: 1.0 # Angular velocity (rad/s)
   #     duration: 26.5 # Duration of the trajectory (s)
   #     ramp_time: 2.0 # Time for smooth transition (s)
+
 
   # Landing trajectory
   - step: 13000
