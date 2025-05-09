@@ -5,13 +5,21 @@ use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
 use crate::sync::WorkerSync;
 use crate::{SimulationError, Trajectory};
+use chrono::Local;
 use colored::Colorize;
+use csv::Writer;
 use nalgebra::{Matrix3, Rotation3, UnitQuaternion, Vector3};
 use rayon::prelude::*;
 use rerun::RecordingStreamBuilder;
+use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fs::{create_dir_all, File},
+    io::{self},
+    path::PathBuf,
+};
 use tokio::sync::mpsc;
 
 use std::collections::HashMap;
@@ -85,6 +93,15 @@ macro_rules! debug {
     };
 }
 
+fn make_timestamped_csv_path(prefix: &str) -> io::Result<PathBuf> {
+    let ts = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let filename = format!("{prefix}_{ts}.csv");
+    let mut dir = PathBuf::from("logs");
+    create_dir_all(&dir)?;
+    dir.push(filename);
+    Ok(dir)
+}
+
 #[derive(Debug, Default)]
 pub struct DesiredState {
     pub position: Vector3<f32>,
@@ -103,12 +120,205 @@ pub struct ControlOutput {
 
 /// Struct to represent a log message
 // #[derive(Debug)]
-struct LogMessage {
+pub struct LogMessage {
     time: f32,
     quad_config: config::QuadrotorConfigurations,
     quad_state: QuadrotorState,
     desired_state: DesiredState,
     control_out: ControlOutput,
+}
+
+#[derive(Serialize)]
+pub struct LogRecord {
+    pub time: f32,
+
+    // state
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub pos_z: f32,
+    pub vel_x: f32,
+    pub vel_y: f32,
+    pub vel_z: f32,
+    pub ori_w: f32,
+    pub ori_i: f32,
+    pub ori_j: f32,
+    pub ori_k: f32,
+
+    // desired
+    pub des_pos_x: f32,
+    pub des_pos_y: f32,
+    pub des_pos_z: f32,
+
+    pub des_vel_x: f32,
+    pub des_vel_y: f32,
+    pub des_vel_z: f32,
+
+    pub des_ori_w: f32,
+    pub des_ori_i: f32,
+    pub des_ori_j: f32,
+    pub des_ori_k: f32,
+
+    // control
+    pub thrust: f32,
+    pub torque_x: f32,
+    pub torque_y: f32,
+    pub torque_z: f32,
+}
+
+impl From<&LogMessage> for LogRecord {
+    fn from(msg: &LogMessage) -> Self {
+        let p = msg.quad_state.position;
+        let v = msg.quad_state.velocity;
+        let ori = msg.quad_state.orientation.quaternion(); // gives nalgebra::Quaternion<f32>
+
+        LogRecord {
+            time: msg.time,
+
+            pos_x: p.x,
+            pos_y: p.y,
+            pos_z: p.z,
+            vel_x: v.x,
+            vel_y: v.y,
+            vel_z: v.z,
+            ori_w: ori.w,
+            ori_i: ori.i,
+            ori_j: ori.j,
+            ori_k: ori.k,
+
+            des_pos_x: msg.desired_state.position.x,
+            des_pos_y: msg.desired_state.position.y,
+            des_pos_z: msg.desired_state.position.z,
+            des_vel_x: msg.desired_state.velocity.x,
+            des_vel_y: msg.desired_state.velocity.y,
+            des_vel_z: msg.desired_state.velocity.z,
+            des_ori_w: msg.desired_state.orientation.w,
+            des_ori_i: msg.desired_state.orientation.i,
+            des_ori_j: msg.desired_state.orientation.j,
+            des_ori_k: msg.desired_state.orientation.k,
+
+            thrust: msg.control_out.thrust,
+            torque_x: msg.control_out.torque.x,
+            torque_y: msg.control_out.torque.y,
+            torque_z: msg.control_out.torque.z,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct FileLogger {
+    tx: tokio::sync::mpsc::Sender<LogMessage>,
+}
+
+impl FileLogger {
+    /// Create a new logger, write the header row immediately.
+    pub fn new(
+        prefix: &str,
+        worker_sync: Arc<WorkerSync>,
+    ) -> Result<(tokio::task::JoinHandle<()>, Self), SimulationError> {
+        let path = make_timestamped_csv_path(prefix)
+            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+        let file = File::create(&path).map_err(|e| SimulationError::OtherError(e.to_string()))?;
+        let mut writer = Writer::from_writer(file);
+        let (tx, mut rx) = mpsc::channel::<LogMessage>(100);
+        // Serde will use the field names as the header
+        writer
+            .write_record(&[
+                "time",
+                // state
+                "pos_x",
+                "pos_y",
+                "pos_z",
+                "vel_x",
+                "vel_y",
+                "vel_z",
+                "ori_w",
+                "ori_i",
+                "ori_j",
+                "ori_k",
+                // desired
+                "des_pos_x",
+                "des_pos_y",
+                "des_pos_z",
+                "des_vel_x",
+                "des_vel_y",
+                "des_vel_z",
+                "des_ori_w",
+                "des_ori_i",
+                "des_ori_j",
+                "des_ori_k",
+                // control
+                "thrust",
+                "torque_x",
+                "torque_y",
+                "torque_z",
+            ])
+            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+        writer
+            .flush()
+            .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+
+        let handle = tokio::spawn(async move {
+            // Initialize the File logging stream
+
+            loop {
+                if worker_sync.kill.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                match rx.recv().await {
+                    Some(message) => {
+                        let log_message: LogRecord = (&message).into();
+                        let mut rerun_quad_state = message.quad_state.clone();
+                        match message.quad_config.clone() {
+                            config::QuadrotorConfigurations::Peng(_) => (),
+                            config::QuadrotorConfigurations::Liftoff(_) => {
+                                rerun_quad_state.position = Vector3::new(
+                                    message.quad_state.position.x,
+                                    -message.quad_state.position.y,
+                                    message.quad_state.position.z,
+                                );
+                            }
+                            config::QuadrotorConfigurations::Betaflight(_) => {
+                                rerun_quad_state.position = Vector3::new(
+                                    message.quad_state.position.x,
+                                    message.quad_state.position.y,
+                                    message.quad_state.position.z,
+                                );
+                            }
+                        };
+                        writer
+                            .serialize(log_message)
+                            .expect("Failed to serialize log message");
+                        writer.flush().expect("Failed to flush log writer");
+                    }
+
+                    None => {
+                        break;
+                    }
+                }
+            }
+        });
+        Ok((handle, Self { tx }))
+    }
+
+    pub fn log(
+        &self,
+        time: f32,
+        quad_config: config::QuadrotorConfigurations,
+        quad_state: QuadrotorState,
+        desired_state: DesiredState,
+        control_out: ControlOutput,
+    ) -> Result<(), SimulationError> {
+        let log_message = LogMessage {
+            time,
+            quad_config,
+            quad_state,
+            desired_state,
+            control_out,
+        };
+        self.tx.try_send(log_message).ok(); // Non-blocking send
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -120,7 +330,7 @@ pub struct RerunLogger {
 impl RerunLogger {
     /// Creates a new RerunLogger and spawns the logging thread
     pub fn new(
-        config: config::Config,
+        config: Arc<config::Config>,
         mut maze_watch: tokio::sync::watch::Receiver<Maze>,
         quadrotor_ids: Vec<String>,
         worker_sync: Arc<WorkerSync>,
@@ -168,7 +378,6 @@ impl RerunLogger {
                 config.camera.near,
                 config.camera.far,
             );
-            println!("Trajectory Map: {:?}", trajectory_map_clone.lock().unwrap());
 
             loop {
                 if worker_sync.kill.load(Ordering::Relaxed) {

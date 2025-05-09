@@ -1,4 +1,5 @@
 use_rerun: true # Enable visualization using rerun.io
+file_logger: "standard"
 render_depth: true # Enable rendering depth
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 

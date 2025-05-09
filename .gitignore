@@ -22,3 +22,6 @@ target/
 .cargo
 .cargo
 .cargo
+
+# Logs
+logs/
