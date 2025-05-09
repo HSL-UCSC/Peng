@@ -104,6 +104,18 @@ planner_schedule:
   #     duration: 26.5 # Duration of the trajectory (s)
   #     ramp_time: 2.0 # Time for smooth transition (s)
 
+    # Minimum Snap Waypoint trajectory
+  - step: 5000
+    planner_type: MinimumSnapWaypoint
+    params:
+      waypoints: # List of waypoints [x, y, z] (m)
+        - [0.0, 0.0, 0.5]
+        - [0.0, 0.5, 0.5]
+        - [0.25, 0.75, 0.5]
+        - [0.5, 1.0, 0.5]
+      yaws: [0.0, 0.0, 0.0, 0.0] # Yaw angles at waypoints (rad)
+      segment_times: [3.0, 3.0, 3.0, 3.0] # Time to reach each waypoint (s)
+
 
   # Landing trajectory
   - step: 13000

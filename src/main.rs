@@ -222,7 +222,7 @@ fn quadrotor_worker(
                 desired_yaw,
                 &quad_state.position,
                 &quad_state.velocity,
-                simulation_period * 10.0,
+                simulation_period,
             );
 
             let torque = controller.compute_attitude_control(
