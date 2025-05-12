@@ -190,7 +190,7 @@ fn quadrotor_worker(
             .iter()
             .map(|step| planners::PlannerStepConfig {
                 step: step.step,
-                time: Some(step.time),
+                time: step.time,
                 planner_type: step.planner_type.clone(),
                 params: step.params.clone(),
             })
@@ -219,27 +219,38 @@ fn quadrotor_worker(
             let step = sync.clock.load(Ordering::Relaxed);
 
             // Do simulation and control here
-
             let time = simulation_period * step as f32;
             let maze = maze_watch.borrow().clone();
-            planners::update_planner(
-                &mut planner_manager,
-                step as usize,
-                time,
-                config.simulation.simulation_frequency,
-                &quad_state,
-                &maze.obstacles,
-                &planner_config,
-            )
-            .expect("failed to update planner");
+            // TODO: START HERE - should the update_planner, and planner_manager.update methods be
+            // combined?
+            // planners::update_planner(
+            //     &mut planner_manager,
+            //     step as usize,
+            //     time,
+            //     config.simulation.simulation_frequency,
+            //     &quad_state,
+            //     &maze.obstacles,
+            //     &planner_config,
+            // )
+            // .expect("failed to update planner");
+
+            // step: usize,
+            // time: f32,
+            // _simulation_frequency: usize,
+            // quad_state: &QuadrotorState,
+            // obstacles: &[Obstacle],
+            // planner_config: &[PlannerStepConfig],
+
+            // FIXME: why do I need to cast step?
             let (desired_position, desired_velocity, desired_yaw) = planner_manager
                 .update(
-                    quad_state.position,
-                    quad_state.orientation,
-                    quad_state.velocity,
+                    step.try_into().unwrap(),
                     time,
+                    &quad_state,
                     &maze.obstacles,
+                    &planner_config,
                 )
+                .await
                 .expect("failed to calculate inner loop control");
 
             let (thrust, desired_orientation) = controller.compute_position_control(
@@ -248,7 +259,7 @@ fn quadrotor_worker(
                 desired_yaw,
                 &quad_state.position,
                 &quad_state.velocity,
-                simulation_period * 10.0,
+                simulation_period,
             );
 
             let torque = controller.compute_attitude_control(

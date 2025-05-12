@@ -1,20 +1,19 @@
 use crate::environment::Obstacle;
 use crate::quadrotor::QuadrotorState;
 use crate::SimulationError;
-use crate::{parse_f32, parse_vector3};
+use crate::{parse_f32, parse_string, parse_vector3};
+use async_trait::async_trait;
 use nalgebra::{SMatrix, UnitQuaternion, Vector3};
 use std::f32::consts::PI;
 use tonic::transport::Channel;
+use tonic::transport::Endpoint;
 
 #[cfg(feature = "hyrl")]
-pub mod hyrl {
-    pub mod v1 {
-        tonic::include_proto!("hyrl.v1");
-    }
-}
-
-#[cfg(feature = "hyrl")]
-use crate::hyrl::obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient;
+use crate::hyrl::{
+    direction_request::ModelType,
+    obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient, DirectionRequest,
+    DroneState, TrajectoryRequest, TrajectoryResponse,
+};
 
 /// A struct to hold trajectory data
 /// # Example
@@ -126,22 +125,28 @@ impl PlannerType {
     /// let hover_planner_type = PlannerType::Hover(hover_planner);
     /// let (desired_position, desired_velocity, desired_yaw) = hover_planner_type.plan(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 0.0);
     /// ```
-    pub fn plan(
+    pub async fn plan(
         &self,
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
         time: f32,
     ) -> (Vector3<f32>, Vector3<f32>, f32) {
         match self {
-            PlannerType::Hover(p) => p.plan(current_position, current_velocity, time),
-            PlannerType::MinimumJerkLine(p) => p.plan(current_position, current_velocity, time),
-            PlannerType::Lissajous(p) => p.plan(current_position, current_velocity, time),
-            PlannerType::Circle(p) => p.plan(current_position, current_velocity, time),
-            PlannerType::Landing(p) => p.plan(current_position, current_velocity, time),
-            PlannerType::ObstacleAvoidance(p) => p.plan(current_position, current_velocity, time),
-            PlannerType::MinimumSnapWaypoint(p) => p.plan(current_position, current_velocity, time),
+            PlannerType::Hover(p) => p.plan(current_position, current_velocity, time).await,
+            PlannerType::MinimumJerkLine(p) => {
+                p.plan(current_position, current_velocity, time).await
+            }
+            PlannerType::Lissajous(p) => p.plan(current_position, current_velocity, time).await,
+            PlannerType::Circle(p) => p.plan(current_position, current_velocity, time).await,
+            PlannerType::Landing(p) => p.plan(current_position, current_velocity, time).await,
+            PlannerType::ObstacleAvoidance(p) => {
+                p.plan(current_position, current_velocity, time).await
+            }
+            PlannerType::MinimumSnapWaypoint(p) => {
+                p.plan(current_position, current_velocity, time).await
+            }
             #[cfg(feature = "hyrl")]
-            PlannerType::HyRL(p) => p.plan(current_position, current_velocity, time),
+            PlannerType::HyRL(p) => p.plan(current_position, current_velocity, time).await,
         }
     }
     /// Checks if the current trajectory is finished
@@ -204,6 +209,7 @@ impl PlannerType {
 ///     }
 /// }
 /// ```
+#[async_trait]
 pub trait Planner {
     /// Plans the trajectory based on the current state and time
     /// # Arguments
@@ -235,8 +241,8 @@ pub trait Planner {
     ///     }
     /// }
     /// ```
-    fn plan(
-        &self,
+    async fn plan<'a>(
+        &'a self,
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
         time: f32,
@@ -293,8 +299,9 @@ pub struct HoverPlanner {
     pub target_yaw: f32,
 }
 /// Implementation of the `Planner` trait for the `HoverPlanner`
+#[async_trait]
 impl Planner for HoverPlanner {
-    fn plan(
+    async fn plan(
         &self,
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
@@ -340,8 +347,9 @@ pub struct MinimumJerkLinePlanner {
     pub duration: f32,
 }
 /// Implementation of the planner trait for minimum jerk line planner
+#[async_trait]
 impl Planner for MinimumJerkLinePlanner {
-    fn plan(
+    async fn plan(
         &self,
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
@@ -409,8 +417,9 @@ pub struct LissajousPlanner {
     pub ramp_time: f32,
 }
 /// Implementation of the planner trait for Lissajous curve trajectories
+#[async_trait]
 impl Planner for LissajousPlanner {
-    fn plan(
+    async fn plan(
         &self,
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
@@ -497,8 +506,9 @@ pub struct CirclePlanner {
     pub ramp_time: f32,
 }
 /// Implementation of the Planner trait for CirclePlanner
+#[async_trait]
 impl Planner for CirclePlanner {
-    fn plan(
+    async fn plan(
         &self,
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
@@ -565,8 +575,9 @@ pub struct LandingPlanner {
     pub start_yaw: f32,
 }
 /// Implementation of the Planner trait for LandingPlanner
+#[async_trait]
 impl Planner for LandingPlanner {
-    fn plan(
+    async fn plan(
         &self,
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
@@ -599,6 +610,7 @@ impl Planner for LandingPlanner {
 pub struct PlannerManager {
     /// The current planner
     pub current_planner: PlannerType,
+    pub channel: Option<Channel>,
 }
 /// Implementation of the PlannerManager
 impl PlannerManager {
@@ -621,10 +633,22 @@ impl PlannerManager {
             target_position: initial_position,
             target_yaw: initial_yaw,
         };
+
+        #[cfg(feature = "hyrl")]
+        let channel = Some(
+            Endpoint::from_shared("http://127.0.0.1:50051".to_string())
+                .unwrap()
+                .connect_lazy(),
+        );
+
+        #[cfg(not(feature = "hyrl"))]
+        let channel = None;
         Self {
             current_planner: PlannerType::Hover(hover_planner),
+            channel: channel,
         }
     }
+
     /// Sets a new planner
     /// # Arguments
     /// * `new_planner` - The new planner to be set
@@ -651,7 +675,180 @@ impl PlannerManager {
     pub fn set_planner(&mut self, new_planner: PlannerType) {
         self.current_planner = new_planner;
     }
-    /// Updates the current planner and returns the desired position, velocity, and yaw
+
+    /// Creates a planner based on the configuration
+    /// # Arguments
+    /// * `step` - The configuration for the planner step in ms unit
+    /// * `quad` - The Quadrotor instance
+    /// * `time` - The current simulation time
+    /// * `obstacles` - The current obstacles in the simulation
+    /// # Returns
+    /// * `PlannerType` - The created planner
+    /// # Errors
+    /// * If the planner type is not recognized
+    /// # Example
+    /// ```
+    /// use peng_quad::config;
+    /// use peng_quad::environment::Obstacle;
+    /// use peng_quad::{PlannerType, Quadrotor, PlannerStepConfig, create_planner, quadrotor::QuadrotorInterface};
+    /// use nalgebra::Vector3;
+    /// let step = PlannerStepConfig {
+    ///    step: 0,
+    ///   planner_type: "MinimumJerkLine".to_string(),
+    ///   params:
+    ///       serde_yaml::from_str(r#"
+    ///       end_position: [0.0, 0.0, 1.0]
+    ///       end_yaw: 0.0
+    ///       duration: 2.0
+    ///       "#).unwrap(),
+    /// };
+    /// let time = 0.0;
+    /// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
+    /// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
+    /// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::QuadrotorConfig::default(), config::ImuConfig::default()).unwrap();
+    /// let quadrotor_state = quadrotor.observe(0.0).unwrap();
+    /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
+    /// let planner = create_planner(&step, &quadrotor_state, time, &obstacles).unwrap().await;
+    /// match planner {
+    ///    PlannerType::MinimumJerkLine(_) => log::info!("Created MinimumJerkLine planner"),
+    ///   _ => log::info!("Created another planner"),
+    /// }
+    /// ```
+    pub async fn create_planner(
+        &self,
+        step: &PlannerStepConfig,
+        quad_state: &QuadrotorState,
+        time: f32,
+        obstacles: &[Obstacle],
+    ) -> Result<PlannerType, SimulationError> {
+        let params = &step.params;
+        match step.planner_type.as_str() {
+            "MinimumJerkLine" => Ok(PlannerType::MinimumJerkLine(MinimumJerkLinePlanner {
+                start_position: quad_state.position,
+                end_position: parse_vector3(params, "end_position")?,
+                start_yaw: quad_state.orientation.euler_angles().2,
+                end_yaw: parse_f32(params, "end_yaw")?,
+                start_time: time,
+                duration: parse_f32(params, "duration")?,
+            })),
+            "Hover" => Ok(PlannerType::Hover(HoverPlanner {
+                target_position: parse_vector3(params, "end_position")?,
+                target_yaw: parse_f32(params, "target_yaw")?,
+            })),
+            "Lissajous" => Ok(PlannerType::Lissajous(LissajousPlanner {
+                start_position: quad_state.position,
+                center: parse_vector3(params, "center")?,
+                amplitude: parse_vector3(params, "amplitude")?,
+                frequency: parse_vector3(params, "frequency")?,
+                phase: parse_vector3(params, "phase")?,
+                start_time: time,
+                duration: parse_f32(params, "duration")?,
+                start_yaw: quad_state.orientation.euler_angles().2,
+                end_yaw: parse_f32(params, "end_yaw")?,
+                ramp_time: parse_f32(params, "ramp_time")?,
+            })),
+            "Circle" => Ok(PlannerType::Circle(CirclePlanner {
+                center: parse_vector3(params, "center")?,
+                radius: parse_f32(params, "radius")?,
+                angular_velocity: parse_f32(params, "angular_velocity")?,
+                start_position: quad_state.position,
+                start_time: time,
+                duration: parse_f32(params, "duration")?,
+                start_yaw: quad_state.orientation.euler_angles().2,
+                end_yaw: quad_state.orientation.euler_angles().2,
+                ramp_time: parse_f32(params, "ramp_time")?,
+            })),
+            "ObstacleAvoidance" => Ok(PlannerType::ObstacleAvoidance(ObstacleAvoidancePlanner {
+                target_position: parse_vector3(params, "target_position")?,
+                start_time: time,
+                duration: parse_f32(params, "duration")?,
+                start_yaw: quad_state.orientation.euler_angles().2,
+                end_yaw: parse_f32(params, "end_yaw")?,
+                obstacles: obstacles.to_owned(),
+                k_att: parse_f32(params, "k_att")?,
+                k_rep: parse_f32(params, "k_rep")?,
+                k_vortex: parse_f32(params, "k_vortex")?,
+                d0: parse_f32(params, "d0")?,
+                d_target: parse_f32(params, "d_target")?,
+                max_speed: parse_f32(params, "max_speed")?,
+            })),
+            "MinimumSnapWaypoint" => {
+                let mut waypoints = vec![quad_state.position];
+                waypoints.extend(
+                    params["waypoints"]
+                        .as_sequence()
+                        .ok_or_else(|| {
+                            SimulationError::OtherError("Invalid waypoints".to_string())
+                        })?
+                        .iter()
+                        .map(|w| {
+                            w.as_sequence()
+                                .and_then(|coords| {
+                                    Some(Vector3::new(
+                                        coords[0].as_f64()? as f32,
+                                        coords[1].as_f64()? as f32,
+                                        coords[2].as_f64()? as f32,
+                                    ))
+                                })
+                                .ok_or(SimulationError::OtherError("Invalid waypoint".to_string()))
+                        })
+                        .collect::<Result<Vec<Vector3<f32>>, SimulationError>>()?,
+                );
+                let mut yaws = vec![quad_state.orientation.euler_angles().2];
+                yaws.extend(
+                    params["yaws"]
+                        .as_sequence()
+                        .ok_or(SimulationError::OtherError("Invalid yaws".to_string()))?
+                        .iter()
+                        .map(|y| {
+                            y.as_f64()
+                                .map(|v| v as f32)
+                                .ok_or(SimulationError::OtherError("Invalid yaw".to_string()))
+                        })
+                        .collect::<Result<Vec<f32>, SimulationError>>()?,
+                );
+                let segment_times = params["segment_times"]
+                    .as_sequence()
+                    .ok_or_else(|| {
+                        SimulationError::OtherError("Invalid segment_times".to_string())
+                    })?
+                    .iter()
+                    .map(|t| {
+                        t.as_f64().map(|v| v as f32).ok_or_else(|| {
+                            SimulationError::OtherError("Invalid segment time".to_string())
+                        })
+                    })
+                    .collect::<Result<Vec<f32>, SimulationError>>()?;
+                MinimumSnapWaypointPlanner::new(waypoints, yaws, segment_times, time)
+                    .map(PlannerType::MinimumSnapWaypoint)
+            }
+            #[cfg(feature = "hyrl")]
+            "HyRL" => HyRLPlanner::new(
+                quad_state.position,
+                parse_f32(params, "start_yaw")?,
+                parse_vector3(params, "target_position")?,
+                time,
+                parse_f32(params, "duration")?,
+                parse_string(params, "url")?,
+            )
+            .await
+            .map(PlannerType::HyRL),
+            "Landing" => Ok(PlannerType::Landing(LandingPlanner {
+                start_position: quad_state.position,
+                start_time: time,
+                duration: parse_f32(params, "duration")?,
+                start_yaw: quad_state.orientation.euler_angles().2,
+            })),
+            _ => Err(SimulationError::OtherError(format!(
+                "Unknown planner type: {}",
+                step.planner_type
+            ))),
+        }
+    }
+
+    /// Advance or switch planners if needed, then produce the next
+    /// desired setpoint from the active planner.
+    ///
     /// # Arguments
     /// * `current_position` - The current position of the quadrotor
     /// * `current_orientation` - The current orientation of the quadrotor
@@ -685,30 +882,56 @@ impl PlannerManager {
     ///     }
     /// }
     /// ```
-    pub fn update(
+    pub async fn update(
         &mut self,
-        current_position: Vector3<f32>,
-        current_orientation: UnitQuaternion<f32>,
-        current_velocity: Vector3<f32>,
+        step: usize,
         time: f32,
+        quad_state: &QuadrotorState,
         obstacles: &[Obstacle],
+        planner_config: &[PlannerStepConfig],
     ) -> Result<(Vector3<f32>, Vector3<f32>, f32), SimulationError> {
-        if self.current_planner.is_finished(current_position, time)? {
+        // 1) Time‐based switch: look for the *first* config whose time >= now
+        if let Some(ps) = planner_config
+            .iter()
+            .find(|ps| ps.time.map(|t| t >= time).unwrap_or(false))
+        {
+            log::info!("Time: {:.2} s,\tSwitch {}", time, ps.planner_type);
+            let new_planner = self.create_planner(ps, quad_state, time, obstacles).await?;
+            self.current_planner = new_planner;
+        }
+        // 2) Step‐based switch, if no time‐match (or you want step overrides)
+        else if let Some(ps) = planner_config.iter().find(|ps| ps.step == step) {
+            log::info!("Step {}:\tSwitch {}", step, ps.planner_type);
+            let new_planner = self.create_planner(ps, quad_state, time, obstacles).await?;
+            self.current_planner = new_planner;
+        }
+
+        // 3) If the active planner needs obstacle updates (e.g. obstacle avoidance)
+        if let PlannerType::ObstacleAvoidance(ref mut p) = self.current_planner {
+            p.obstacles = obstacles.to_vec();
+        }
+
+        // 4) Check if the planner is finished, swap to Hover if so
+        if self
+            .current_planner
+            .is_finished(quad_state.position, time)?
+        {
             log::info!("Time: {:.2} s,\tSwitch Hover", time);
             self.current_planner = PlannerType::Hover(HoverPlanner {
-                target_position: current_position,
-                target_yaw: current_orientation.euler_angles().2,
+                target_position: quad_state.position,
+                target_yaw: quad_state.orientation.euler_angles().2,
             });
         }
-        // Update obstacles for ObstacleAvoidancePlanner if needed
-        if let PlannerType::ObstacleAvoidance(ref mut planner) = self.current_planner {
-            planner.obstacles = obstacles.to_owned();
-        }
-        Ok(self
+
+        // 5) Finally call plan() on the active planner
+        let (pos, vel, yaw) = self
             .current_planner
-            .plan(current_position, current_velocity, time))
+            .plan(quad_state.position, quad_state.velocity, time)
+            .await;
+        Ok((pos, vel, yaw))
     }
 }
+
 /// Obstacle avoidance planner that uses a potential field approach to avoid obstacles
 ///
 /// The planner calculates a repulsive force for each obstacle and an attractive force towards the goal
@@ -764,8 +987,9 @@ pub struct ObstacleAvoidancePlanner {
     pub max_speed: f32,
 }
 /// Implementation of the Planner trait for ObstacleAvoidancePlanner
+#[async_trait]
 impl Planner for ObstacleAvoidancePlanner {
-    fn plan(
+    async fn plan(
         &self,
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
@@ -1056,13 +1280,15 @@ impl MinimumSnapWaypointPlanner {
     }
 }
 /// Implement the `Planner` trait for `MinimumSnapWaypointPlanner`
+#[async_trait]
 impl Planner for MinimumSnapWaypointPlanner {
-    fn plan(
+    async fn plan(
         &self,
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
     ) -> (Vector3<f32>, Vector3<f32>, f32) {
+        // Returns desired position, desired velo
         let relative_time = time - self.start_time;
         // Find the current segment
         let mut segment_start_time = 0.0;
@@ -1097,6 +1323,17 @@ impl Planner for MinimumSnapWaypointPlanner {
     }
 }
 
+#[cfg(feature = "hyrl")]
+pub enum HyRLClient {
+    Enabled(ObstacleAvoidanceServiceClient<Channel>),
+    Disabled,
+}
+
+#[cfg(not(feature = "hyrl"))]
+pub enum HyRLClient {
+    Disabled,
+}
+
 /// Planner for HyRL obstacle avoidance for a single fixed obstacle
 /// # Example
 /// ```
@@ -1124,23 +1361,26 @@ pub struct HyRLPlanner {
     pub duration: f32,
     /// Waypoints for this trajectory
     pub waypoints: Vec<Vector3<f32>>,
-    pub client: Option<ObstacleAvoidanceServiceClient<Channel>>,
+    /// gRPC client wrapper
+    pub client: HyRLClient,
 }
 
 impl HyRLPlanner {
-    #[cfg(feature = "hyrl")]
-    pub fn new(
+    pub async fn new(
         start_position: Vector3<f32>,
         start_yaw: f32,
         target_position: Vector3<f32>,
         start_time: f32,
         duration: f32,
-        channel: Channel,
-    ) -> Self {
+        url: String,
+    ) -> Result<Self, SimulationError> {
         // build the real client from the channel:
-        let client = Some(ObstacleAvoidanceServiceClient::new(channel));
+        let channel = Endpoint::from_shared(url)
+            .map_err(|_| SimulationError::OtherError(format!("Failed to get url from shared")))?
+            .connect_lazy();
+        let client = ObstacleAvoidanceServiceClient::new(channel);
 
-        Self {
+        Ok(Self {
             start_position,
             start_yaw,
             target_position,
@@ -1148,37 +1388,78 @@ impl HyRLPlanner {
             start_time,
             duration,
             waypoints: Vec::new(),
-            client,
-        }
+            client: HyRLClient::Enabled(client),
+        })
     }
 
-    #[cfg(not(feature = "hyrl"))]
-    pub fn new(
-        start_position: Vector3<f32>,
-        start_yaw: f32,
-        target_position: Vector3<f32>,
-        start_time: f32,
-        duration: f32,
-    ) -> Self {
-        // no client when feature disabled
-        let client = None;
+    pub async fn request_trajectory(&mut self) -> Result<Vec<DroneState>, SimulationError> {
+        // only proceed if the feature is enabled
+        if let HyRLClient::Enabled(ref mut client) = self.client {
+            // build the protobuf request
+            let request = TrajectoryRequest {
+                current_state: Some(DroneState {
+                    x: self.start_position.x,
+                    y: self.start_position.y,
+                    z: self.start_position.z,
+                }),
+                target_state: Some(DroneState {
+                    x: self.target_position.x,
+                    y: self.target_position.y,
+                    z: self.target_position.z,
+                }),
+                num_waypoints: 10, // e.g. choose your own
+                duration_s: self.duration as u32,
+            };
 
-        Self {
-            start_position,
-            start_yaw,
-            target_position,
-            end_yaw: start_yaw,
-            start_time,
-            duration,
-            waypoints: Vec::new(),
-            client,
+            // perform the unary RPC
+            let response = client
+                .get_trajectory(request)
+                .await
+                .map_err(|e| SimulationError::OtherError(format!("gRPC error: {}", e)))?;
+
+            // pull out the inner TrajectoryResponse
+            let TrajectoryResponse { trajectory } = response.into_inner();
+            Ok(trajectory)
+        } else {
+            Err(SimulationError::OtherError(
+                "HyRL client unavailable".into(),
+            ))
         }
     }
 }
 
 /// Implementation of the planner trait for HyRL
+#[async_trait]
 impl Planner for HyRLPlanner {
-    fn plan(
+    // async fn plan(
+    //     &self,
+    //     _current_position: Vector3<f32>,
+    //     _current_velocity: Vector3<f32>,
+    //     time: f32,
+    // ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    //     // Returns desired position, desired velo
+    //     let relative_time = time - self.start_time;
+    //     // Find the current segment
+    //     let mut segment_start_time = 0.0;
+    //     let mut current_segment = 0;
+    //     for (i, &segment_duration) in self.times.iter().enumerate() {
+    //         if relative_time < segment_start_time + segment_duration {
+    //             current_segment = i;
+    //             break;
+    //         }
+    //         segment_start_time += segment_duration;
+    //     }
+    //     // Evaluate the polynomial for the current segment
+    //     let segment_time = relative_time - segment_start_time;
+    //     let (position, velocity, yaw, _yaw_rate) = self.evaluate_polynomial(
+    //         segment_time,
+    //         &self.coefficients[current_segment],
+    //         &self.yaw_coefficients[current_segment],
+    //     );
+    //     (position, velocity, yaw)
+    // }
+
+    async fn plan(
         &self,
         current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
@@ -1186,6 +1467,7 @@ impl Planner for HyRLPlanner {
     ) -> (Vector3<f32>, Vector3<f32>, f32) {
         println!("Current Position: {:?}", current_position);
         // TODO: call HyRL planner service
+        //
         (
             Vector3::<f32>::new(0.0, 0.0, 0.0),
             Vector3::<f32>::new(0.0, 0.0, 0.0),
@@ -1239,233 +1521,4 @@ pub struct PlannerStepConfig {
     pub planner_type: String,
     /// Additional parameters for the planner, stored as a YAML value.
     pub params: serde_yaml::Value,
-}
-/// Updates the planner based on the current simulation step and configuration
-/// # Arguments
-/// * `planner_manager` - The PlannerManager instance to update
-/// * `step` - The current simulation step in ms unit
-/// * `time` - The current simulation time
-/// * `simulation_frequency' - The simulation frequency in Hz
-/// * `quad` - The Quadrotor instance
-/// * `obstacles` - The current obstacles in the simulation
-/// * `planner_config` - The planner configuration
-/// # Errors
-/// * If the planner could not be created
-/// # Example
-/// ```
-/// use peng_quad::config;
-/// use peng_quad::environment::Obstacle;
-/// use peng_quad::{PlannerManager, Quadrotor, PlannerStepConfig, update_planner, quadrotor::QuadrotorInterface};
-/// use nalgebra::Vector3;
-/// let simulation_frequency = 1000;
-/// let initial_position = Vector3::new(0.0, 0.0, 0.0);
-/// let initial_yaw = 0.0;
-/// let mut planner_manager = PlannerManager::new(initial_position, initial_yaw);
-/// let step = 0;
-/// let time = 0.0;
-/// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
-/// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::QuadrotorConfig::default(), config::ImuConfig::default()).unwrap();
-/// let quad_state = quadrotor.observe(0.0).unwrap();
-/// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
-/// let planner_config = vec![PlannerStepConfig {
-///     step: 0,
-///     planner_type: "MinimumJerkLine".to_string(),
-///     params:
-///        serde_yaml::from_str(r#"
-///        end_position: [0.0, 0.0, 1.0]
-///        end_yaw: 0.0
-///        duration: 2.0
-///        "#).unwrap(),
-/// }];
-/// update_planner(&mut planner_manager, step, time, simulation_frequency, &quad_state, &obstacles, &planner_config).unwrap();
-/// ```
-pub fn update_planner(
-    planner_manager: &mut PlannerManager,
-    step: usize,
-    time: f32,
-    _simulation_frequency: usize,
-    quad_state: &QuadrotorState,
-    obstacles: &[Obstacle],
-    planner_config: &[PlannerStepConfig],
-) -> Result<(), SimulationError> {
-    use std::f32;
-    // TODO: we should switch if the time delta is less than a single time step
-    if let Some(ps) = planner_config
-        .iter()
-        .find(|ps| ps.time.map(|t| t >= time).unwrap_or(false))
-    {
-        log::info!("Time: {:.2} s,\tSwitch {}", time, ps.planner_type);
-        planner_manager.set_planner(create_planner(ps, quad_state, time, obstacles)?);
-        return Ok(());
-    }
-    if let Some(planner_step) = planner_config.iter().find(|s| s.step == step) {
-        log::info!("Time: {:.2} s,\tSwitch {}", time, planner_step.planner_type);
-        planner_manager.set_planner(create_planner(planner_step, quad_state, time, obstacles)?);
-    }
-    Ok(())
-}
-/// Creates a planner based on the configuration
-/// # Arguments
-/// * `step` - The configuration for the planner step in ms unit
-/// * `quad` - The Quadrotor instance
-/// * `time` - The current simulation time
-/// * `obstacles` - The current obstacles in the simulation
-/// # Returns
-/// * `PlannerType` - The created planner
-/// # Errors
-/// * If the planner type is not recognized
-/// # Example
-/// ```
-/// use peng_quad::config;
-/// use peng_quad::environment::Obstacle;
-/// use peng_quad::{PlannerType, Quadrotor, PlannerStepConfig, create_planner, quadrotor::QuadrotorInterface};
-/// use nalgebra::Vector3;
-/// let step = PlannerStepConfig {
-///    step: 0,
-///   planner_type: "MinimumJerkLine".to_string(),
-///   params:
-///       serde_yaml::from_str(r#"
-///       end_position: [0.0, 0.0, 1.0]
-///       end_yaw: 0.0
-///       duration: 2.0
-///       "#).unwrap(),
-/// };
-/// let time = 0.0;
-/// let (time_step, mass, gravity, drag_coefficient) = (0.01, 1.3, 9.81, 0.01);
-/// let inertia_matrix = [0.0347563, 0.0, 0.0, 0.0, 0.0458929, 0.0, 0.0, 0.0, 0.0977];
-/// let mut quadrotor = Quadrotor::new(time_step, config::SimulationConfig::default(), config::QuadrotorConfig::default(), config::ImuConfig::default()).unwrap();
-/// let quadrotor_state = quadrotor.observe(0.0).unwrap();
-/// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
-/// let planner = create_planner(&step, &quadrotor_state, time, &obstacles).unwrap();
-/// match planner {
-///    PlannerType::MinimumJerkLine(_) => log::info!("Created MinimumJerkLine planner"),
-///   _ => log::info!("Created another planner"),
-/// }
-/// ```
-pub fn create_planner(
-    step: &PlannerStepConfig,
-    quad_state: &QuadrotorState,
-    time: f32,
-    obstacles: &[Obstacle],
-) -> Result<PlannerType, SimulationError> {
-    let params = &step.params;
-    match step.planner_type.as_str() {
-        "MinimumJerkLine" => Ok(PlannerType::MinimumJerkLine(MinimumJerkLinePlanner {
-            start_position: quad_state.position,
-            end_position: parse_vector3(params, "end_position")?,
-            start_yaw: quad_state.orientation.euler_angles().2,
-            end_yaw: parse_f32(params, "end_yaw")?,
-            start_time: time,
-            duration: parse_f32(params, "duration")?,
-        })),
-        "Hover" => Ok(PlannerType::Hover(HoverPlanner {
-            target_position: parse_vector3(params, "end_position")?,
-            target_yaw: parse_f32(params, "target_yaw")?,
-        })),
-        "Lissajous" => Ok(PlannerType::Lissajous(LissajousPlanner {
-            start_position: quad_state.position,
-            center: parse_vector3(params, "center")?,
-            amplitude: parse_vector3(params, "amplitude")?,
-            frequency: parse_vector3(params, "frequency")?,
-            phase: parse_vector3(params, "phase")?,
-            start_time: time,
-            duration: parse_f32(params, "duration")?,
-            start_yaw: quad_state.orientation.euler_angles().2,
-            end_yaw: parse_f32(params, "end_yaw")?,
-            ramp_time: parse_f32(params, "ramp_time")?,
-        })),
-        "Circle" => Ok(PlannerType::Circle(CirclePlanner {
-            center: parse_vector3(params, "center")?,
-            radius: parse_f32(params, "radius")?,
-            angular_velocity: parse_f32(params, "angular_velocity")?,
-            start_position: quad_state.position,
-            start_time: time,
-            duration: parse_f32(params, "duration")?,
-            start_yaw: quad_state.orientation.euler_angles().2,
-            end_yaw: quad_state.orientation.euler_angles().2,
-            ramp_time: parse_f32(params, "ramp_time")?,
-        })),
-        "ObstacleAvoidance" => Ok(PlannerType::ObstacleAvoidance(ObstacleAvoidancePlanner {
-            target_position: parse_vector3(params, "target_position")?,
-            start_time: time,
-            duration: parse_f32(params, "duration")?,
-            start_yaw: quad_state.orientation.euler_angles().2,
-            end_yaw: parse_f32(params, "end_yaw")?,
-            obstacles: obstacles.to_owned(),
-            k_att: parse_f32(params, "k_att")?,
-            k_rep: parse_f32(params, "k_rep")?,
-            k_vortex: parse_f32(params, "k_vortex")?,
-            d0: parse_f32(params, "d0")?,
-            d_target: parse_f32(params, "d_target")?,
-            max_speed: parse_f32(params, "max_speed")?,
-        })),
-        "MinimumSnapWaypoint" => {
-            let mut waypoints = vec![quad_state.position];
-            waypoints.extend(
-                params["waypoints"]
-                    .as_sequence()
-                    .ok_or_else(|| SimulationError::OtherError("Invalid waypoints".to_string()))?
-                    .iter()
-                    .map(|w| {
-                        w.as_sequence()
-                            .and_then(|coords| {
-                                Some(Vector3::new(
-                                    coords[0].as_f64()? as f32,
-                                    coords[1].as_f64()? as f32,
-                                    coords[2].as_f64()? as f32,
-                                ))
-                            })
-                            .ok_or(SimulationError::OtherError("Invalid waypoint".to_string()))
-                    })
-                    .collect::<Result<Vec<Vector3<f32>>, SimulationError>>()?,
-            );
-            let mut yaws = vec![quad_state.orientation.euler_angles().2];
-            yaws.extend(
-                params["yaws"]
-                    .as_sequence()
-                    .ok_or(SimulationError::OtherError("Invalid yaws".to_string()))?
-                    .iter()
-                    .map(|y| {
-                        y.as_f64()
-                            .map(|v| v as f32)
-                            .ok_or(SimulationError::OtherError("Invalid yaw".to_string()))
-                    })
-                    .collect::<Result<Vec<f32>, SimulationError>>()?,
-            );
-            let segment_times = params["segment_times"]
-                .as_sequence()
-                .ok_or_else(|| SimulationError::OtherError("Invalid segment_times".to_string()))?
-                .iter()
-                .map(|t| {
-                    t.as_f64().map(|v| v as f32).ok_or_else(|| {
-                        SimulationError::OtherError("Invalid segment time".to_string())
-                    })
-                })
-                .collect::<Result<Vec<f32>, SimulationError>>()?;
-            MinimumSnapWaypointPlanner::new(waypoints, yaws, segment_times, time)
-                .map(PlannerType::MinimumSnapWaypoint)
-        }
-        #[cfg(feature = "hyrl")]
-        "HyRL" => Ok(PlannerType::HyRL(HyRLPlanner {
-            start_position: quad_state.position,
-            start_yaw: quad_state.orientation.euler_angles().2,
-            target_position: quad_state.position,
-            end_yaw: quad_state.orientation.euler_angles().2,
-            start_time: time,
-            duration: parse_f32(params, "duration")?,
-            waypoints: vec![],
-            client: None,
-        })),
-        "Landing" => Ok(PlannerType::Landing(LandingPlanner {
-            start_position: quad_state.position,
-            start_time: time,
-            duration: parse_f32(params, "duration")?,
-            start_yaw: quad_state.orientation.euler_angles().2,
-        })),
-        _ => Err(SimulationError::OtherError(format!(
-            "Unknown planner type: {}",
-            step.planner_type
-        ))),
-    }
 }
