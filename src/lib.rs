@@ -55,7 +55,7 @@ pub mod sync;
 
 #[cfg(feature = "hyrl")]
 pub mod hyrl {
-    include!(concat!(env!("OUT_DIR"), "/hyrl.v1.rs"));
+    include!(concat!(env!("OUT_DIR"), "/hyrl.rs"));
 }
 
 use nalgebra::{Matrix3, Quaternion, Rotation3, UnitQuaternion, Vector3};
@@ -742,6 +742,29 @@ pub fn parse_f32(value: &serde_yaml::Value, key: &str) -> Result<f32, Simulation
         .as_f64()
         .map(|v| v as f32)
         .ok_or_else(|| SimulationError::OtherError(format!("Invalid {}", key)))
+}
+
+/// Helper function to parse a string from YAML
+/// # Arguments
+/// * `value` - YAML mapping value
+/// * `key` - key to lookup
+/// # Returns
+/// * `String` - the parsed string
+/// # Errors
+/// * `SimulationError` - if the key is missing or the value is not a string
+/// # Example
+/// ```
+/// use peng_quad::{parse_string, SimulationError};
+/// let value = serde_yaml::from_str("name: \"quad\"").unwrap();
+/// let result = parse_string(&value, "name").unwrap();
+/// assert_eq!(result, "quad");
+/// ```
+pub fn parse_string(value: &serde_yaml::Value, key: &str) -> Result<String, SimulationError> {
+    value
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_owned())
+        .ok_or_else(|| SimulationError::OtherError(format!("Missing or non-string key: `{}`", key)))
 }
 
 /// Casts a ray from the camera origin in the given direction
