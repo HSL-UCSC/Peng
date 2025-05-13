@@ -1,9 +1,10 @@
 use crate::environment::Obstacle;
 use crate::quadrotor::QuadrotorState;
-use crate::SimulationError;
 use crate::{parse_f32, parse_string, parse_vector3};
+use crate::{parse_uint, SimulationError};
 use async_trait::async_trait;
 use nalgebra::{SMatrix, UnitQuaternion, Vector3};
+use std::collections::VecDeque;
 use std::f32::consts::PI;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
@@ -241,8 +242,8 @@ pub trait Planner {
     ///     }
     /// }
     /// ```
-    async fn plan<'a>(
-        &'a self,
+    async fn plan(
+        &self,
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
         time: f32,
@@ -830,6 +831,7 @@ impl PlannerManager {
                 time,
                 parse_f32(params, "duration")?,
                 parse_string(params, "url")?,
+                parse_uint(params, "num_waypoints")?,
             )
             .await
             .map(PlannerType::HyRL),
@@ -1359,13 +1361,17 @@ pub struct HyRLPlanner {
     pub start_time: f32,
     /// Duration of the trajectory
     pub duration: f32,
-    /// Waypoints for this trajectory
-    pub waypoints: Vec<Vector3<f32>>,
     /// gRPC client wrapper
     pub client: HyRLClient,
+    /// Minimum snap planner
+    pub minimum_snap_planner: MinimumSnapWaypointPlanner,
 }
 
 impl HyRLPlanner {
+    // Create a HyRL Planner instance.
+    // The HyRL Planner maintains an inner minimum snap planner.
+    // On creation, it requests a trajectory from the HyRL server and initializes the minimum snap
+    // planner with the waypoints and yaw angles.
     pub async fn new(
         start_position: Vector3<f32>,
         start_yaw: f32,
@@ -1373,12 +1379,46 @@ impl HyRLPlanner {
         start_time: f32,
         duration: f32,
         url: String,
+        num_waypoints: u32,
     ) -> Result<Self, SimulationError> {
         // build the real client from the channel:
         let channel = Endpoint::from_shared(url)
             .map_err(|_| SimulationError::OtherError(format!("Failed to get url from shared")))?
             .connect_lazy();
-        let client = ObstacleAvoidanceServiceClient::new(channel);
+        let mut client = HyRLClient::Enabled(ObstacleAvoidanceServiceClient::new(channel));
+        let drone_states = HyRLPlanner::request_trajectory(
+            &mut client,
+            start_position,
+            target_position,
+            duration,
+            num_waypoints,
+        )
+        .await?;
+        if drone_states.len() < 2 {
+            return Err(SimulationError::OtherError(
+                "HyRL returned <2 waypoints".into(),
+            ));
+        }
+        let drone_waypoints: Vec<Vector3<f32>> = drone_states
+            .iter()
+            .map(|state| Vector3::new(state.x, state.y, state.z))
+            .collect();
+
+        let mut yaws: VecDeque<f32> = drone_waypoints
+            .windows(2)
+            // .iter()
+            .map(|window| {
+                let a = window[0];
+                let b = window[1];
+                let delta_x = b.x - a.x;
+                let delta_y = b.y - a.y;
+                delta_y.atan2(delta_x)
+            })
+            .collect();
+        yaws.push_front(start_yaw);
+
+        let segment_duration = duration / (drone_waypoints.len() - 1) as f32;
+        let durations = vec![segment_duration; drone_waypoints.len() - 1];
 
         Ok(Self {
             start_position,
@@ -1387,28 +1427,39 @@ impl HyRLPlanner {
             end_yaw: start_yaw,
             start_time,
             duration,
-            waypoints: Vec::new(),
-            client: HyRLClient::Enabled(client),
+            client,
+            minimum_snap_planner: MinimumSnapWaypointPlanner::new(
+                drone_waypoints,
+                yaws.into(),
+                durations,
+                start_time,
+            )?,
         })
     }
 
-    pub async fn request_trajectory(&mut self) -> Result<Vec<DroneState>, SimulationError> {
+    pub async fn request_trajectory(
+        client: &mut HyRLClient,
+        start_position: Vector3<f32>,
+        target_position: Vector3<f32>,
+        duration_s: f32,
+        num_waypoints: u32,
+    ) -> Result<Vec<DroneState>, SimulationError> {
         // only proceed if the feature is enabled
-        if let HyRLClient::Enabled(ref mut client) = self.client {
+        if let HyRLClient::Enabled(ref mut client) = client {
             // build the protobuf request
             let request = TrajectoryRequest {
                 current_state: Some(DroneState {
-                    x: self.start_position.x,
-                    y: self.start_position.y,
-                    z: self.start_position.z,
+                    x: start_position.x,
+                    y: start_position.y,
+                    z: start_position.z,
                 }),
                 target_state: Some(DroneState {
-                    x: self.target_position.x,
-                    y: self.target_position.y,
-                    z: self.target_position.z,
+                    x: target_position.x,
+                    y: target_position.y,
+                    z: target_position.z,
                 }),
-                num_waypoints: 10, // e.g. choose your own
-                duration_s: self.duration as u32,
+                num_waypoints,
+                duration_s: duration_s as u32,
             };
 
             // perform the unary RPC
@@ -1431,48 +1482,15 @@ impl HyRLPlanner {
 /// Implementation of the planner trait for HyRL
 #[async_trait]
 impl Planner for HyRLPlanner {
-    // async fn plan(
-    //     &self,
-    //     _current_position: Vector3<f32>,
-    //     _current_velocity: Vector3<f32>,
-    //     time: f32,
-    // ) -> (Vector3<f32>, Vector3<f32>, f32) {
-    //     // Returns desired position, desired velo
-    //     let relative_time = time - self.start_time;
-    //     // Find the current segment
-    //     let mut segment_start_time = 0.0;
-    //     let mut current_segment = 0;
-    //     for (i, &segment_duration) in self.times.iter().enumerate() {
-    //         if relative_time < segment_start_time + segment_duration {
-    //             current_segment = i;
-    //             break;
-    //         }
-    //         segment_start_time += segment_duration;
-    //     }
-    //     // Evaluate the polynomial for the current segment
-    //     let segment_time = relative_time - segment_start_time;
-    //     let (position, velocity, yaw, _yaw_rate) = self.evaluate_polynomial(
-    //         segment_time,
-    //         &self.coefficients[current_segment],
-    //         &self.yaw_coefficients[current_segment],
-    //     );
-    //     (position, velocity, yaw)
-    // }
-
     async fn plan(
         &self,
-        current_position: Vector3<f32>,
+        _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
     ) -> (Vector3<f32>, Vector3<f32>, f32) {
-        println!("Current Position: {:?}", current_position);
-        // TODO: call HyRL planner service
-        //
-        (
-            Vector3::<f32>::new(0.0, 0.0, 0.0),
-            Vector3::<f32>::new(0.0, 0.0, 0.0),
-            0.0,
-        )
+        self.minimum_snap_planner
+            .plan(_current_position, _current_velocity, time)
+            .await
     }
 
     /// Returns true once we have both (a) crossed the half‐plane
@@ -1482,16 +1500,16 @@ impl Planner for HyRLPlanner {
         current_position: Vector3<f32>,
         _time: f32,
     ) -> Result<bool, SimulationError> {
-        if self.waypoints.len() < 2 {
+        if self.minimum_snap_planner.waypoints.len() < 2 {
             return Err(SimulationError::OtherError(
                 "Not enough waypoints to define half‐plane".into(),
             ));
         }
 
         // Last two waypoints
-        let last_idx = self.waypoints.len() - 1;
-        let p_prev = self.waypoints[last_idx - 1];
-        let p_last = self.waypoints[last_idx];
+        let last_idx = self.minimum_snap_planner.waypoints.len() - 1;
+        let p_prev = self.minimum_snap_planner.waypoints[last_idx - 1];
+        let p_last = self.minimum_snap_planner.waypoints[last_idx];
 
         // Unit normal pointing along the path direction
         let n = (p_last - p_prev).normalize();
