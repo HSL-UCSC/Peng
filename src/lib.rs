@@ -744,6 +744,49 @@ pub fn parse_f32(value: &serde_yaml::Value, key: &str) -> Result<f32, Simulation
         .ok_or_else(|| SimulationError::OtherError(format!("Invalid {}", key)))
 }
 
+/// Helper to parse an unsigned integer of any size from YAML
+///
+/// # Type parameters
+/// * `T` — target unsigned integer type (e.g. `u8`, `u16`, `u32`, `u64`, `usize`, etc.).
+///
+/// # Arguments
+/// * `value` — the full `serde_yaml::Value` map or document
+/// * `key` — the key whose value we expect to be an unsigned integer
+///
+/// # Returns
+/// * `T` — the parsed integer, if it fits into `T`
+///
+/// # Errors
+/// * `SimulationError::OtherError` if the key is missing or not an unsigned integer,
+///   or if the integer is too large to fit in `T`.
+///
+/// # Example
+/// ```rust
+/// use peng_quad::{parse_uint, SimulationError};
+/// let doc = serde_yaml::from_str("count: 42\n").unwrap();
+/// let count: u8 = parse_uint(&doc, "count")?;
+/// assert_eq!(count, 42_u8);
+/// # Ok::<_, SimulationError>(())
+/// ```
+pub fn parse_uint<T>(value: &serde_yaml::Value, key: &str) -> Result<T, SimulationError>
+where
+    T: TryFrom<u64>,
+    T::Error: std::fmt::Display,
+{
+    // 1) Extract as a u64
+    let raw = value[key].as_u64().ok_or_else(|| {
+        SimulationError::OtherError(format!(
+            "Invalid or missing unsigned integer for key '{}'",
+            key
+        ))
+    })?;
+
+    // 2) Try to convert into the smaller (or equal‐sized) unsigned type
+    T::try_from(raw).map_err(|e| {
+        SimulationError::OtherError(format!("Value for '{}' out of range: {}", key, e))
+    })
+}
+
 /// Helper function to parse a string from YAML
 /// # Arguments
 /// * `value` - YAML mapping value
