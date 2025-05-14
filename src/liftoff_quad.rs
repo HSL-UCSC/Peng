@@ -432,7 +432,7 @@ fn scale_control(value: f32) -> i32 {
 mod tests {
 
     use super::*;
-    use std::f32::consts::FRAC_PI_2;
+    
 
     /// Checks if two `Vector3` instances are element-wise close within the given tolerances.
     fn is_close(this: &Vector3<f32>, other: &Vector3<f32>, rel_tol: f32, abs_tol: f32) -> bool {
