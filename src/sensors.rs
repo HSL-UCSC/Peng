@@ -7,7 +7,7 @@ use rayon::slice::ParallelSliceMut;
 
 use crate::environment::Maze;
 use crate::fast_sqrt;
-use crate::{ray_cast, SimulationError};
+use crate::SimulationError;
 
 /// Represents an Inertial Measurement Unit (IMU) with bias and noise characteristics
 /// # Example
@@ -132,6 +132,89 @@ impl Imu {
         let measured_acceleration = true_acceleration + self.accel_bias + accel_noise_sample;
         let measured_ang_velocity = true_angular_velocity + self.gyro_bias + gyro_noise_sample;
         Ok((measured_acceleration, measured_ang_velocity))
+    }
+}
+
+/// Casts a ray from the camera origin in the given direction
+/// # Arguments
+/// * `origin` - The origin of the ray
+/// * `rotation_world_to_camera` - The rotation matrix from world to camera coordinates
+/// * `direction` - The direction of the ray
+/// * `maze` - The maze in the scene
+/// * `near` - The minimum distance to consider
+/// * `far` - The maximum distance to consider
+/// # Returns
+/// * The distance to the closest obstacle hit by the ray
+/// # Errors
+/// * If the ray does not hit any obstacles
+/// # Example
+/// ```
+/// use peng_quad::ray_cast;
+/// use peng_quad::environment::Maze;
+/// use nalgebra::{Vector3, Matrix3};
+/// let origin = Vector3::new(0.0, 0.0, 0.0);
+/// let rotation_world_to_camera = Matrix3::identity();
+/// let direction = Vector3::new(0.0, 0.0, 1.0);
+/// let maze = Maze::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0], 5, [0.1, 0.1, 0.1], [0.1, 0.5]);
+/// let near = 0.1;
+/// let far = 100.0;
+/// let distance = ray_cast(&origin, &rotation_world_to_camera, &direction, &maze, near, far);
+/// ```
+pub fn ray_cast(
+    origin: &Vector3<f32>,
+    rotation_world_to_camera: &Matrix3<f32>,
+    direction: &Vector3<f32>,
+    maze: &Maze,
+    near: f32,
+    far: f32,
+) -> Result<f32, SimulationError> {
+    let mut closest_hit = far;
+    // Inline tube intersection
+    for axis in 0..3 {
+        let t_near = if direction[axis] > 0.0 {
+            (maze.upper_bounds[axis] - origin[axis]) / direction[axis]
+        } else {
+            (maze.lower_bounds[axis] - origin[axis]) / direction[axis]
+        };
+        if t_near > near && t_near < closest_hit {
+            let intersection_point = origin + direction * t_near;
+            let mut valid = true;
+            for i in 0..3 {
+                if i != axis
+                    && (intersection_point[i] < maze.lower_bounds[i]
+                        || intersection_point[i] > maze.upper_bounds[i])
+                {
+                    valid = false;
+                    break;
+                }
+            }
+            if valid {
+                closest_hit = t_near;
+            }
+        }
+    }
+    // Early exit if we've hit a wall closer than any possible obstacle
+    if closest_hit <= near {
+        return Ok(f32::INFINITY);
+    }
+    // Inline sphere intersection
+    for obstacle in &maze.obstacles {
+        let oc = origin - obstacle.position;
+        let b = oc.dot(direction);
+        let c = oc.dot(&oc) - obstacle.radius * obstacle.radius;
+        let discriminant = b * b - c;
+        if discriminant >= 0.0 {
+            // let t = -b - discriminant.sqrt();
+            let t = -b - fast_sqrt(discriminant);
+            if t > near && t < closest_hit {
+                closest_hit = t;
+            }
+        }
+    }
+    if closest_hit < far {
+        Ok((rotation_world_to_camera * direction * closest_hit).x)
+    } else {
+        Ok(f32::INFINITY)
     }
 }
 
