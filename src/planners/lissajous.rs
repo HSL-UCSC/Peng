@@ -9,7 +9,7 @@ use crate::planners::Planner;
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::LissajousPlanner;
+/// use peng_quad::planners::LissajousPlanner;
 /// let lissajous_planner = LissajousPlanner {
 ///     start_position: Vector3::new(0.0, 0.0, 0.0),
 ///     center: Vector3::new(1.0, 1.0, 1.0),

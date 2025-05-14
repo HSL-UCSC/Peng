@@ -8,7 +8,7 @@ use crate::planners::Planner;
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::MinimumJerkLinePlanner;
+/// use peng_quad::planners::MinimumJerkLinePlanner;
 /// let minimum_jerk_line_planner = MinimumJerkLinePlanner {
 ///     start_position: Vector3::new(0.0, 0.0, 0.0),
 ///     end_position: Vector3::new(1.0, 1.0, 1.0),

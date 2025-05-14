@@ -8,7 +8,7 @@ use crate::planners::Planner;
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::CirclePlanner;
+/// use peng_quad::planners::CirclePlanner;
 /// let circle_planner = CirclePlanner {
 ///     center: Vector3::new(1.0, 1.0, 1.0),
 ///     radius: 1.0,

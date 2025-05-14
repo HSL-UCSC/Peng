@@ -756,7 +756,7 @@ pub fn log_pinhole_depth(
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{Trajectory};
+/// use peng_quad::planners::Trajectory;
 /// use peng_quad::logger::log_trajectory;
 /// use nalgebra::Vector3;
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();

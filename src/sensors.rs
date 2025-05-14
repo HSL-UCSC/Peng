@@ -149,7 +149,7 @@ impl Imu {
 /// * If the ray does not hit any obstacles
 /// # Example
 /// ```
-/// use peng_quad::ray_cast;
+/// use peng_quad::sensors::ray_cast;
 /// use peng_quad::environment::Maze;
 /// use nalgebra::{Vector3, Matrix3};
 /// let origin = Vector3::new(0.0, 0.0, 0.0);

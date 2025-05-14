@@ -8,7 +8,7 @@ use crate::planners::Planner;
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::LandingPlanner;
+/// use peng_quad::planners::LandingPlanner;
 /// let landing_planner = LandingPlanner {
 ///    start_position: Vector3::new(0.0, 0.0, 1.0),
 ///     start_time: 0.0,

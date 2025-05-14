@@ -7,15 +7,75 @@ use tonic::transport::Endpoint;
 
 #[cfg(feature = "hyrl")]
 use crate::hyrl::{
-    obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient,
-    DroneState, TrajectoryRequest, TrajectoryResponse,
+    obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient, DroneState,
+    TrajectoryRequest, TrajectoryResponse,
 };
 use crate::planners::{MinimumSnapWaypointPlanner, Planner};
 
+/// The abstraction that both your real gRPC‐backed client and your mock client will implement.
+#[async_trait]
+pub trait HyRLObstacleAvoidanceService: Send + Sync {
+    async fn request_trajectory(
+        &mut self,
+        start: Vector3<f32>,
+        target: Vector3<f32>,
+        duration_s: f32,
+        num_waypoints: u32,
+    ) -> Result<Vec<DroneState>, SimulationError>;
+}
+
 #[cfg(feature = "hyrl")]
-pub enum HyRLClient {
-    Enabled(ObstacleAvoidanceServiceClient<Channel>),
-    Disabled,
+pub struct HyRLClient {
+    inner: ObstacleAvoidanceServiceClient<Channel>,
+}
+
+impl HyRLClient {
+    pub fn new(url: String) -> Result<Self, SimulationError> {
+        // build the real client from the channel:
+        let channel = Endpoint::from_shared(url)
+            .map_err(|_| SimulationError::OtherError(format!("Failed to get url from shared")))?
+            .connect_lazy();
+        let inner = ObstacleAvoidanceServiceClient::new(channel);
+        Ok(Self { inner })
+    }
+}
+
+#[cfg(feature = "hyrl")]
+#[async_trait]
+impl HyRLObstacleAvoidanceService for HyRLClient {
+    async fn request_trajectory(
+        &mut self,
+        start_position: Vector3<f32>,
+        target_position: Vector3<f32>,
+        duration_s: f32,
+        num_waypoints: u32,
+    ) -> Result<Vec<DroneState>, SimulationError> {
+        let request = TrajectoryRequest {
+            current_state: Some(DroneState {
+                x: start_position.x,
+                y: start_position.y,
+                z: start_position.z,
+            }),
+            target_state: Some(DroneState {
+                x: target_position.x,
+                y: target_position.y,
+                z: target_position.z,
+            }),
+            num_waypoints,
+            duration_s: duration_s as u32,
+        };
+
+        // perform the unary RPC
+        let response = self
+            .inner
+            .get_trajectory(request)
+            .await
+            .map_err(|e| SimulationError::OtherError(format!("gRPC error: {}", e)))?;
+
+        // pull out the inner TrajectoryResponse
+        let TrajectoryResponse { trajectory } = response.into_inner();
+        Ok(trajectory)
+    }
 }
 
 #[cfg(not(feature = "hyrl"))]
@@ -24,17 +84,6 @@ pub enum HyRLClient {
 }
 
 /// Planner for HyRL obstacle avoidance for a single fixed obstacle
-/// # Example
-/// ```
-/// use nalgebra::Vector3;
-/// use peng_quad::MinimumJerkLinePlanner;
-/// let hyrl_planner = HyRLPlanner {
-///     start_position: Vector3::new(0.0, 0.0, 0.0),
-///     end_position: Vector3::new(1.0, 1.0, 1.0),
-///     start_time: 0.0,
-///     duration: 1.0,
-/// };
-/// ```
 pub struct HyRLPlanner {
     /// Starting position of the trajectory
     pub start_position: Vector3<f32>,
@@ -49,7 +98,7 @@ pub struct HyRLPlanner {
     /// Duration of the trajectory
     pub duration: f32,
     /// gRPC client wrapper
-    pub client: HyRLClient,
+    pub client: Box<dyn HyRLObstacleAvoidanceService>,
     /// Minimum snap planner
     pub minimum_snap_planner: MinimumSnapWaypointPlanner,
 }
@@ -65,22 +114,12 @@ impl HyRLPlanner {
         target_position: Vector3<f32>,
         start_time: f32,
         duration: f32,
-        url: String,
         num_waypoints: u32,
+        mut client: Box<dyn HyRLObstacleAvoidanceService>,
     ) -> Result<Self, SimulationError> {
-        // build the real client from the channel:
-        let channel = Endpoint::from_shared(url)
-            .map_err(|_| SimulationError::OtherError(format!("Failed to get url from shared")))?
-            .connect_lazy();
-        let mut client = HyRLClient::Enabled(ObstacleAvoidanceServiceClient::new(channel));
-        let drone_states = HyRLPlanner::request_trajectory(
-            &mut client,
-            start_position,
-            target_position,
-            duration,
-            num_waypoints,
-        )
-        .await?;
+        let drone_states = client
+            .request_trajectory(start_position, target_position, duration, num_waypoints)
+            .await?;
         if drone_states.len() < 2 {
             return Err(SimulationError::OtherError(
                 "HyRL returned <2 waypoints".into(),
@@ -123,47 +162,6 @@ impl HyRLPlanner {
             )?,
         })
     }
-
-    pub async fn request_trajectory(
-        client: &mut HyRLClient,
-        start_position: Vector3<f32>,
-        target_position: Vector3<f32>,
-        duration_s: f32,
-        num_waypoints: u32,
-    ) -> Result<Vec<DroneState>, SimulationError> {
-        // only proceed if the feature is enabled
-        if let HyRLClient::Enabled(ref mut client) = client {
-            // build the protobuf request
-            let request = TrajectoryRequest {
-                current_state: Some(DroneState {
-                    x: start_position.x,
-                    y: start_position.y,
-                    z: start_position.z,
-                }),
-                target_state: Some(DroneState {
-                    x: target_position.x,
-                    y: target_position.y,
-                    z: target_position.z,
-                }),
-                num_waypoints,
-                duration_s: duration_s as u32,
-            };
-
-            // perform the unary RPC
-            let response = client
-                .get_trajectory(request)
-                .await
-                .map_err(|e| SimulationError::OtherError(format!("gRPC error: {}", e)))?;
-
-            // pull out the inner TrajectoryResponse
-            let TrajectoryResponse { trajectory } = response.into_inner();
-            Ok(trajectory)
-        } else {
-            Err(SimulationError::OtherError(
-                "HyRL client unavailable".into(),
-            ))
-        }
-    }
 }
 
 /// Implementation of the planner trait for HyRL
@@ -203,5 +201,85 @@ impl Planner for HyRLPlanner {
 
         // Check 1: Have we crossed the plane through p_last with normal n?
         Ok((current_position - p_last).dot(&n) >= 0.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hyrl::DroneState;
+    use async_trait::async_trait;
+    use nalgebra::Vector3;
+
+    /// A little mock that just returns whatever DroneState vector we give it.
+    struct MockHyRLClient {
+        responses: Vec<DroneState>,
+    }
+
+    #[async_trait]
+    impl HyRLObstacleAvoidanceService for MockHyRLClient {
+        async fn request_trajectory(
+            &mut self,
+            _start: Vector3<f32>,
+            _target: Vector3<f32>,
+            _duration_s: f32,
+            _num_waypoints: u32,
+        ) -> Result<Vec<DroneState>, SimulationError> {
+            Ok(self.responses.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn hyrl_planner_new_with_mock_returns_correct_waypoints() -> Result<(), SimulationError> {
+        // Arrange: choose some fake waypoints
+        let fake_states = vec![
+            DroneState {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            DroneState {
+                x: 0.5,
+                y: 0.5,
+                z: 0.5,
+            },
+            DroneState {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            },
+        ];
+        let mock = MockHyRLClient {
+            responses: fake_states.clone(),
+        };
+
+        let start_pos = Vector3::new(0.0, 0.0, 0.0);
+        let target_pos = Vector3::new(1.0, 1.0, 1.0);
+        let start_yaw = 0.0;
+        let start_time = 0.0;
+        let duration = 5.0;
+        let num_waypoints = fake_states.len() as u32;
+
+        // Act: build the HyRLPlanner with our mock client
+        let planner = HyRLPlanner::new(
+            start_pos,
+            start_yaw,
+            target_pos,
+            start_time,
+            duration,
+            num_waypoints,
+            Box::new(mock),
+        )
+        .await?;
+
+        // Assert: the inner MinimumSnapWaypointPlanner should have exactly our fake waypoints
+        let expected: Vec<Vector3<f32>> = fake_states
+            .into_iter()
+            .map(|s| Vector3::new(s.x, s.y, s.z))
+            .collect();
+
+        assert_eq!(planner.minimum_snap_planner.waypoints, expected);
+
+        Ok(())
     }
 }

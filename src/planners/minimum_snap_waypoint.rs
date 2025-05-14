@@ -7,7 +7,7 @@ use crate::planners::Planner;
 /// Waypoint planner that generates a minimum snap trajectory between waypoints
 /// # Example
 /// ```
-/// use peng_quad::MinimumSnapWaypointPlanner;
+/// use peng_quad::planners::MinimumSnapWaypointPlanner;
 /// use nalgebra::Vector3;
 /// let planner = MinimumSnapWaypointPlanner::new(
 ///     vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)],
@@ -44,7 +44,7 @@ impl MinimumSnapWaypointPlanner {
     /// * Returns an error if the number of waypoints, yaws, and segment times do not match
     /// # Example
     /// ```
-    /// use peng_quad::MinimumSnapWaypointPlanner;
+    /// use peng_quad::planners::MinimumSnapWaypointPlanner;
     /// use nalgebra::Vector3;
     /// let waypoints = vec![Vector3::zeros(), Vector3::new(1.0, 0.0, 0.0)];
     /// let yaws = vec![0.0, 0.0];
@@ -83,7 +83,7 @@ impl MinimumSnapWaypointPlanner {
     /// * Returns an error if the nalgebra solver fails to solve the linear system
     /// # Example
     /// ```
-    /// use peng_quad::MinimumSnapWaypointPlanner;
+    /// use peng_quad::planners::MinimumSnapWaypointPlanner;
     /// use nalgebra::Vector3;
     /// let waypoints = vec![Vector3::zeros(), Vector3::new(1.0, 0.0, 0.0)];
     /// let yaws = vec![0.0, 0.0];
@@ -133,7 +133,7 @@ impl MinimumSnapWaypointPlanner {
     /// * Returns an error if nalgebra fails to solve for the coefficients
     /// # Example
     /// ```
-    /// use peng_quad::MinimumSnapWaypointPlanner;
+    /// use peng_quad::planners::MinimumSnapWaypointPlanner;
     /// use nalgebra::Vector3;
     /// let waypoints = vec![Vector3::zeros(), Vector3::new(1.0, 0.0, 0.0)];
     /// let yaws = vec![0.0, 0.0];
@@ -177,7 +177,7 @@ impl MinimumSnapWaypointPlanner {
     /// # Example
     /// ```
     /// use nalgebra::Vector3;
-    /// use peng_quad::MinimumSnapWaypointPlanner;
+    /// use peng_quad::planners::MinimumSnapWaypointPlanner;
     /// let waypoints = vec![Vector3::zeros(), Vector3::new(1.0, 0.0, 0.0)];
     /// let yaws = vec![0.0, 0.0];
     /// let segment_times = vec![1.0];

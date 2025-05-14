@@ -13,7 +13,7 @@ use crate::planners::Planner;
 /// ```
 /// use nalgebra::Vector3;
 /// use peng_quad::environment::{Obstacle};
-/// use peng_quad::{ObstacleAvoidancePlanner};
+/// use peng_quad::planners::ObstacleAvoidancePlanner;
 /// let planner = ObstacleAvoidancePlanner {
 ///     target_position: Vector3::new(0.0, 0.0, 1.0),
 ///     start_time: 0.0,
@@ -115,7 +115,7 @@ impl ObstacleAvoidancePlanner {
     /// * The attractive force
     /// # Example
     /// ```
-    /// use peng_quad::ObstacleAvoidancePlanner;
+    /// use peng_quad::planners::ObstacleAvoidancePlanner;
     /// let planner = ObstacleAvoidancePlanner {
     ///    target_position: nalgebra::Vector3::new(0.0, 0.0, 1.0),
     ///     start_time: 0.0,

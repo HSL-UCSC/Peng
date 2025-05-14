@@ -8,7 +8,7 @@ use crate::planners::Planner;
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::HoverPlanner;
+/// use peng_quad::planners::HoverPlanner;
 /// let hover_planner = HoverPlanner {
 ///     target_position: Vector3::new(0.0, 0.0, 0.0),
 ///     target_yaw: 0.0,
