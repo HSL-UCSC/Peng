@@ -25,7 +25,7 @@ quadrotor:
     max_thrust_kg: 0.223
     arm_length_m: .065
     yaw_torque_constant: .0052
-  subject_name: "mob7"
+  id: "mob7"
   # serial_port: "/dev/tty.usbserial-B001JE6N"
   serial_port: "COM4"
   baud_rate: 460800

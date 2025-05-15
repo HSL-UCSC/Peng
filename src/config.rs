@@ -119,7 +119,7 @@ impl QuadrotorConfigurations {
 #[serde(default)]
 /// Configuration for the quadrotor
 pub struct QuadrotorConfig {
-    /// Mass of the quadrotor in kg
+    /// Identifier for the quadrotor
     pub id: String,
     /// Mass of the quadrotor in kg
     pub mass: f32,

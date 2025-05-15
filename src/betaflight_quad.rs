@@ -242,7 +242,7 @@ impl QuadrotorInterface for BetaflightQuad {
         let acceleration_body = self.body_acceleration(self.previous_state.velocity, v_body, dt);
         self.state = QuadrotorState {
             time: dt,
-            state: peng_quad::quadrotor::State {
+            state: crate::quadrotor::State {
                 position: position,
                 velocity: v_body,
                 acceleration: acceleration_body,
