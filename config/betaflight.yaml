@@ -1,5 +1,6 @@
 use_rerun: true # Enable visualization using rerun.io
 render_depth: true # Enable rendering depth
+file_logger: "standard"
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 
 rerun_blueprint: "config/hsl_blueprint.rbl"
@@ -95,27 +96,34 @@ planner_schedule:
   #     duration: 4.0 # Duration of the trajectory (s)
 
   # # Circular trajectory
-  # - step: 3000
+  # - step: 4000
   #   planner_type: Circle
   #   params:
-  #     center: [0.0, 0.0, 0.8] # Center of the circle [x, y, z] (m)
+  #     center: [0.0, 0.0, 0.5] # Center of the circle [x, y, z] (m)
   #     radius: 1.0 # Radius of the circle (m)
   #     angular_velocity: 1.0 # Angular velocity (rad/s)
   #     duration: 26.5 # Duration of the trajectory (s)
   #     ramp_time: 2.0 # Time for smooth transition (s)
 
-    # Minimum Snap Waypoint trajectory
-  - step: 5000
-    planner_type: MinimumSnapWaypoint
-    params:
-      waypoints: # List of waypoints [x, y, z] (m)
-        - [0.0, 0.0, 0.5]
-        - [0.0, 0.5, 0.5]
-        - [0.25, 0.75, 0.5]
-        - [0.5, 1.0, 0.5]
-      yaws: [0.0, 0.0, 0.0, 0.0] # Yaw angles at waypoints (rad)
-      segment_times: [3.0, 3.0, 3.0, 3.0] # Time to reach each waypoint (s)
+  # # Minimum Snap Waypoint trajectory
+  # - step: 500
+  #   planner_type: MinimumSnapWaypoint
+  #   params:
+  #     waypoints: # List of waypoints [x, y, z] (m)
+  #       - [0.0, 0.0, 0.5]     # Start
+  #       - [0.25, 0.25, 0.5]   # Approach
+  #       - [0.5, 0.5, 0.5]    # Start of semi-circle
+  #       - [1.0, 1.0, 0.5]    # End of semi-circle
+  #       - [1.0, 1.5, 0.5]     # Final position
+  #     yaws: [0.0, 0.0, 0.0, 0.0, 0.0] # Yaw angles at waypoints (rad)
+  #     segment_times: [5.0, 2.0, 2.0, 2.0, 2.0] # Time to reach each waypoint (s)
 
+  # # Hover
+  # - step: 8000 # Simulation step in ms to start this planner
+  #   planner_type: Hover
+  #   params:
+  #     end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+  #     target_yaw: 0.0 # Target end yaw angle (rad)
 
   # Landing trajectory
   - step: 13000
