@@ -38,6 +38,10 @@ jobs:
           restore-keys: |
             nix-${{ runner.os }}-
 
+      - name: Install system dependencies (Linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+
       - name: Enter Nix flake shell & Build
         run: |
           nix develop --command cargo build --verbose
