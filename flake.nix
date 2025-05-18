@@ -5,89 +5,76 @@
     naersk.url = "github:nix-community/naersk/master";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
+    oaapis = {
+      url   = "github:HSL-UCSC/Quad-RL/rar/server_init";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, utils, naersk }:
-    utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs { inherit system; };
-        naersk-lib = pkgs.callPackage naersk { };
+  outputs = { self, nixpkgs, utils, naersk, oaapis }:
+    utils.lib.eachDefaultSystem (system: let
+      pkgs = import nixpkgs { inherit system; };
+      naersk-lib = pkgs.callPackage naersk { };
+    in rec {
+      # This builds your package for running the code.
+      packages.default = naersk-lib.buildPackage ./.;
 
-        # Define OS-specific dependencies
-        osSpecificDeps = if pkgs.stdenv.isLinux then [
-          pkgs.systemd
-          pkgs.pkg-config
-        ] else if pkgs.stdenv.isDarwin then [
-          pkgs.darwin.apple_sdk.frameworks.CoreServices
-          pkgs.darwin.apple_sdk.frameworks.IOKit
-        ] else [];
-      in
-      {
-        # Default package build
-        defaultPackage = naersk-lib.buildPackage ./.;
+      # Dev shell for just running the code, with a minimal set of Rust tools.
+      devShells.run = with pkgs; mkShell {
+        buildInputs = [
+          cargo
+          clippy
+          rustc
+          rustfmt
+          pre-commit
+          rerun
+          protobuf
+        ]
+        ++ (if stdenv.isLinux then [ pkg-config systemd ] else []);
 
-        # Default shell - minimal
-        devShells.default = with pkgs; mkShell {
-          buildInputs = [
-            cargo
-            clippy
-            rustc
-            rustfmt
-            pre-commit
-            rustPackages.clippy
-            rerun
-            protobuf
-            neovim # Include neovim explicitly here
-          ] ++ osSpecificDeps;
+        shellHook = ''
+          export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
+          echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
+        '';
+      };
 
-          shellHook = ''
-            echo "Entering default Rust shell..."
-          '';
-        };
+      # Dev shell geared toward development, leaving your system's Neovim in place.
+      devShells.dev = with pkgs; mkShell {
+        buildInputs = [
+          cargo
+          clippy
+          rustc
+          rustfmt
+          pre-commit
+          rerun
+          protobuf
+        ];
+        shellHook = ''
+          export GIT_CONFIG=$PWD/.gitconfig
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
+          export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
 
-        # Full development shell - zsh based
-        devShells.dev = with pkgs; mkShell {
-          buildInputs = [
-            cargo
-            clippy
-            rustc
-            rustfmt
-            pre-commit
-            rustPackages.clippy
-            rerun
-            protobuf
-          ] ++ osSpecificDeps;
+          ${if pkgs.stdenv.isLinux then ''
+            export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
+          '' else ""}
+          
+          ${if pkgs.stdenv.isDarwin then ''
+            echo "Running on macOS, using Darwin-specific dependencies."
+          '' else ""}
+          
+          echo "Entering Rust development environment..."
+          cargo fetch # Pre-fetch dependencies
 
-          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+          Start Zsh if not already the active shell
+          if [ "$SHELL" != "$(command -v zsh)" ]; then
+            export SHELL="$(command -v zsh)"
+            exec zsh
+          fi
+        '';
+      };
 
-          shellHook = ''
-            export GIT_CONFIG=$PWD/.gitconfig
-            export CARGO_NET_GIT_FETCH_WITH_CLI=true
-            export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
-
-            ${if pkgs.stdenv.isLinux then ''
-              export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
-            '' else ""}
-
-            ${if pkgs.stdenv.isDarwin then ''
-              echo "Running on macOS, using Darwin-specific dependencies."
-            '' else ""}
-
-            echo "Entering full development environment (dev)..."
-
-            # If inside nix shell, make sure to stay in zsh
-            if [ -n "$ZSH_VERSION" ]; then
-              export SHELL=$(which zsh)
-            else
-              export SHELL=$(which zsh || echo $SHELL)
-            fi
-
-            # Start a login zsh if needed (only if not already inside one)
-            if [ -z "$ZSH_VERSION" ]; then
-              exec $SHELL -l
-            fi
-          '';
-        };
-      }
-    );
+      # Set the default dev shell to "run"
+      devShell = devShells.run;
+    });
 }

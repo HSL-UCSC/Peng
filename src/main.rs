@@ -2,6 +2,7 @@ mod betaflight_quad;
 mod liftoff_quad;
 mod logger;
 // mod quadrotor_factory;
+pub mod planners;
 mod sync;
 
 use futures::future::try_join_all;
@@ -40,7 +41,7 @@ async fn main() -> Result<(), SimulationError> {
     info!(plog, "Use rerun.io: {}", config.use_rerun);
     info!(plog, "Using quadrotor: {:?}", config.quadrotor);
 
-    let maze = Maze::new(
+    let maze = environment::Maze::new(
         config.maze.lower_bounds,
         config.maze.upper_bounds,
         config.maze.num_obstacles,
@@ -183,12 +184,14 @@ fn quadrotor_worker(
     let handle = tokio::spawn(async move {
         let (mut quad, mass) =
             build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
-        let mut planner_manager = PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
-        let planner_config: Vec<PlannerStepConfig> = config
+        let mut planner_manager =
+            planners::PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
+        let planner_config: Vec<planners::PlannerStepConfig> = config
             .planner_schedule
             .iter()
-            .map(|step| PlannerStepConfig {
+            .map(|step| planners::PlannerStepConfig {
                 step: step.step,
+                time: step.time,
                 planner_type: step.planner_type.clone(),
                 params: step.params.clone(),
             })
@@ -199,7 +202,7 @@ fn quadrotor_worker(
         log::info!("Quadrotor: {:?} {:?}", mass, config.simulation.gravity);
         let pos_gains = config.pid_controller.pos_gains;
         let att_gains = config.pid_controller.att_gains;
-        let mut controller = PIDController::new(
+        let mut controller = peng_quad::PIDController::new(
             [pos_gains.kp, pos_gains.kd, pos_gains.ki],
             [att_gains.kp, att_gains.kd, att_gains.ki],
             config.pid_controller.pos_max_int,
@@ -217,27 +220,38 @@ fn quadrotor_worker(
             let step = sync.clock.load(Ordering::Relaxed);
 
             // Do simulation and control here
-
             let time = simulation_period * step as f32;
             let maze = maze_watch.borrow().clone();
-            update_planner(
-                &mut planner_manager,
-                step as usize,
-                time,
-                config.simulation.simulation_frequency,
-                &quad_state,
-                &maze.obstacles,
-                &planner_config,
-            )
-            .expect("failed to update planner");
+            // TODO: START HERE - should the update_planner, and planner_manager.update methods be
+            // combined?
+            // planners::update_planner(
+            //     &mut planner_manager,
+            //     step as usize,
+            //     time,
+            //     config.simulation.simulation_frequency,
+            //     &quad_state,
+            //     &maze.obstacles,
+            //     &planner_config,
+            // )
+            // .expect("failed to update planner");
+
+            // step: usize,
+            // time: f32,
+            // _simulation_frequency: usize,
+            // quad_state: &QuadrotorState,
+            // obstacles: &[Obstacle],
+            // planner_config: &[PlannerStepConfig],
+
+            // FIXME: why do I need to cast step?
             let (desired_position, desired_velocity, desired_yaw) = planner_manager
                 .update(
-                    quad_state.position,
-                    quad_state.orientation,
-                    quad_state.velocity,
+                    step.try_into().unwrap(),
                     time,
+                    &quad_state,
                     &maze.obstacles,
+                    &planner_config,
                 )
+                .await
                 .expect("failed to calculate inner loop control");
 
             let (thrust, desired_orientation) = controller.compute_position_control(
@@ -246,7 +260,7 @@ fn quadrotor_worker(
                 desired_yaw,
                 &quad_state.position,
                 &quad_state.velocity,
-                simulation_period * 10.0,
+                simulation_period,
             );
 
             let torque = controller.compute_attitude_control(
@@ -358,8 +372,8 @@ fn maze_worker(
     _id: String,
     config: &config::SimulationConfig,
     sync: Arc<WorkerSync>,
-    tx: tokio::sync::watch::Sender<Maze>,
-    maze: Maze,
+    tx: tokio::sync::watch::Sender<environment::Maze>,
+    maze: environment::Maze,
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
     let dt = 1_f32 / (config.simulation_frequency as f32);
     let mut maze = maze.clone();

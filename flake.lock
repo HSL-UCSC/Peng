@@ -33,11 +33,11 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1737746512,
-        "narHash": "sha256-nU6AezEX4EuahTO1YopzueAXfjFfmCHylYEFCagduHU=",
+        "lastModified": 1742422364,
+        "narHash": "sha256-mNqIplmEohk5jRkqYqG19GA8MbQ/D4gQSK0Mu4LvfRQ=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "825479c345a7f806485b7f00dbe3abb50641b083",
+        "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
         "type": "github"
       },
       "original": {
@@ -47,10 +47,28 @@
         "type": "github"
       }
     },
+    "oaapis": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1746997889,
+        "narHash": "sha256-PA1p9XGe2/3oGky+0qGGYF+L+wmHcRRD46XOLgFccKM=",
+        "owner": "HSL-UCSC",
+        "repo": "Quad-RL",
+        "rev": "7fceb15776e442969624b55250f24a24eed0834d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "HSL-UCSC",
+        "ref": "rar/server_init",
+        "repo": "Quad-RL",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "naersk": "naersk",
         "nixpkgs": "nixpkgs_2",
+        "oaapis": "oaapis",
         "utils": "utils"
       }
     },

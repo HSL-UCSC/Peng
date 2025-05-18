@@ -1,10 +1,11 @@
 #![allow(dead_code, unused_variables)]
-use crate::config::{self};
+use crate::config;
 use crate::environment::Maze;
+use crate::planners::Trajectory;
 use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
 use crate::sync::WorkerSync;
-use crate::{SimulationError, Trajectory};
+use crate::SimulationError;
 use chrono::Local;
 use colored::Colorize;
 use csv::Writer;
@@ -222,7 +223,7 @@ impl FileLogger {
         let (tx, mut rx) = mpsc::channel::<LogMessage>(100);
         // Serde will use the field names as the header
         writer
-            .write_record(&[
+            .write_record([
                 "time",
                 // state
                 "pos_x",
@@ -319,6 +320,16 @@ impl FileLogger {
         self.tx.try_send(log_message).ok(); // Non-blocking send
         Ok(())
     }
+}
+
+fn make_timestamped_rrd_path(prefix: &str) -> Result<PathBuf, String> {
+    let ts = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let filename = format!("{}_{}.rrd", prefix, ts);
+    let mut path = PathBuf::from("logs");
+    create_dir_all(&path).map_err(|_| "Failed to create log directory")?;
+    path.push(filename);
+    File::create(&path).map_err(|_| "Failed to create log file")?;
+    Ok(path)
 }
 
 #[derive(Clone)]
@@ -745,7 +756,7 @@ pub fn log_pinhole_depth(
 /// * If the data cannot be logged to the recording stream
 /// # Example
 /// ```no_run
-/// use peng_quad::{Trajectory};
+/// use peng_quad::planners::Trajectory;
 /// use peng_quad::logger::log_trajectory;
 /// use nalgebra::Vector3;
 /// let rec = rerun::RecordingStreamBuilder::new("log.rerun").connect().unwrap();
