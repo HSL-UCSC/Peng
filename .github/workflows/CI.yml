@@ -61,6 +61,9 @@ jobs:
   windows-build: # Job for Windows using original setup
     runs-on: windows-latest
 
+    env:
+      OBSTACLE_AVOIDANCE_APIS: github:HSL-UCSC/Quad-RL/rar/server_init
+
     steps:
       - uses: actions/checkout@v4
 
