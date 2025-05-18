@@ -1,4 +1,4 @@
-//! # Peng - A Minimal Quadrotor Autonomy Framework
+//! # Peng - A Minimal Quadrotor Autonomy Fraework
 //!
 //! A high-performance quadrotor autonomy framework written in Rust that provides
 //! real-time dynamics simulation, trajectory planning, and control with modern
@@ -52,6 +52,9 @@ pub mod planners;
 pub mod quadrotor;
 pub mod sensors;
 pub mod sync;
+use serde_json::{from_str, Value};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[cfg(feature = "hyrl")]
 pub mod hyrl {
@@ -525,8 +528,21 @@ pub struct PIDController {
     /// Mass of the quadrotor
     pub mass: f32,
     /// Gravity constant
-    pub gravity: f32,
+    pub gravity: f32, // working against me
+
+    // only present when live‐tuning via NATS:
+    #[cfg(feature = "tune")]
+    pub nats_conn: async_nats::Client,
 }
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PIDGains {
+    /// PID gain for position control including proportional, derivative, and integral gains
+    pub kpid_pos: [Vector3<f32>; 3],
+    /// PID gain for attitude control including proportional, derivative, and integral gains
+    pub kpid_att: [Vector3<f32>; 3],
+}
+
 /// Implementation of PIDController
 impl PIDController {
     /// Creates a new PIDController with default gains
@@ -550,25 +566,81 @@ impl PIDController {
     /// let gravity = 9.81;
     /// let pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
     /// ```
-    pub fn new(
-        _kpid_pos: [[f32; 3]; 3],
-        _kpid_att: [[f32; 3]; 3],
-        _max_integral_pos: [f32; 3],
-        _max_integral_att: [f32; 3],
-        _mass: f32,
-        _gravity: f32,
-    ) -> Self {
-        Self {
-            kpid_pos: _kpid_pos.map(Vector3::from),
-            kpid_att: _kpid_att.map(Vector3::from),
+    pub async fn new(
+        kpid_pos: [[f32; 3]; 3],
+        kpid_att: [[f32; 3]; 3],
+        max_integral_pos: [f32; 3],
+        max_integral_att: [f32; 3],
+        mass: f32,
+        gravity: f32,
+    ) -> Arc<Mutex<Self>> {
+        let controller = PIDController {
+            kpid_pos: kpid_pos.map(Vector3::from),
+            kpid_att: kpid_att.map(Vector3::from),
             integral_pos_error: Vector3::zeros(),
             integral_att_error: Vector3::zeros(),
-            max_integral_pos: Vector3::from(_max_integral_pos),
-            max_integral_att: Vector3::from(_max_integral_att),
-            mass: _mass,
-            gravity: _gravity,
+            max_integral_pos: Vector3::from(max_integral_pos),
+            max_integral_att: Vector3::from(max_integral_att),
+            mass,
+            gravity,
+
+            #[cfg(feature = "tune")]
+            // connect to localhost NATS server
+            nats_conn: async_nats::connect("127.0.0.1:4222").await
+                .expect("failed to connect to nats"),
+        };
+
+        let controller = Arc::new(Mutex::new(controller));
+
+        #[cfg(feature = "tune")]
+        {
+            let ctl = controller.clone();
+            tokio::spawn(async move {
+                // Publish the controller’s initial PID‐pos gains:
+                {
+                    // grab a lock so we can read kpid_pos
+                    let locked = ctl.lock().await;
+                    // serialize the P‐gains for axis 0 as an example
+                    let initial_gains = PIDGains {
+                        kpid_pos: locked.kpid_pos,
+                        kpid_att: locked.kpid_att,
+                    };
+                    let payload = serde_json::to_string(&initial_gains)
+                        .expect("failed to serialize initial gains");
+                    // publish on "pid.gains"
+                    // note: `.await` is required, publish returns a Future
+                    locked
+                        .nats_conn
+                        .publish("pid.gains".to_string(), payload.into())
+                        .await
+                        .expect("failed to publish initial gains");
+                }
+
+                // Subscribe and listen for updates
+                let mut sub = ctl
+                    .lock()
+                    .await
+                    .nats_conn
+                    .subscribe("pid.gains".to_string())
+                    .await
+                    .expect("nats subscribe failed");
+
+                use futures::StreamExt;
+                while let Some(msg) = sub.next().await {
+                    if let Ok(text) = std::str::from_utf8(&msg.payload) {
+                        if let Ok(new_p) = serde_json::from_str::<PIDGains>(text) {
+                            let mut locked = ctl.lock().await;
+                            locked.kpid_pos = new_p.kpid_pos;
+                            locked.kpid_att = new_p.kpid_pos;
+                        }
+                    }
+                }
+            });
         }
+
+        controller
     }
+
     /// Computes attitude control torques
     /// # Arguments
     /// * `desired_orientation` - The desired orientation quaternion

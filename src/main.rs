@@ -202,14 +202,17 @@ fn quadrotor_worker(
         log::info!("Quadrotor: {:?} {:?}", mass, config.simulation.gravity);
         let pos_gains = config.pid_controller.pos_gains;
         let att_gains = config.pid_controller.att_gains;
-        let mut controller = peng_quad::PIDController::new(
+        let controller = peng_quad::PIDController::new(
             [pos_gains.kp, pos_gains.kd, pos_gains.ki],
             [att_gains.kp, att_gains.kd, att_gains.ki],
             config.pid_controller.pos_max_int,
             config.pid_controller.att_max_int,
             mass,
             config.simulation.gravity,
-        );
+        )
+        .await;
+        let mut controller = controller.lock().await;
+
         let mut quad_state = quad
             .observe(0_f32)
             .expect("error getting latest state estimate");
@@ -222,25 +225,6 @@ fn quadrotor_worker(
             // Do simulation and control here
             let time = simulation_period * step as f32;
             let maze = maze_watch.borrow().clone();
-            // TODO: START HERE - should the update_planner, and planner_manager.update methods be
-            // combined?
-            // planners::update_planner(
-            //     &mut planner_manager,
-            //     step as usize,
-            //     time,
-            //     config.simulation.simulation_frequency,
-            //     &quad_state,
-            //     &maze.obstacles,
-            //     &planner_config,
-            // )
-            // .expect("failed to update planner");
-
-            // step: usize,
-            // time: f32,
-            // _simulation_frequency: usize,
-            // quad_state: &QuadrotorState,
-            // obstacles: &[Obstacle],
-            // planner_config: &[PlannerStepConfig],
 
             // FIXME: why do I need to cast step?
             let (desired_position, desired_velocity, desired_yaw) = planner_manager

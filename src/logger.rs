@@ -223,7 +223,7 @@ impl FileLogger {
         let (tx, mut rx) = mpsc::channel::<LogMessage>(100);
         // Serde will use the field names as the header
         writer
-            .write_record(&[
+            .write_record([
                 "time",
                 // state
                 "pos_x",

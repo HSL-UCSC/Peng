@@ -33,7 +33,7 @@ impl HyRLClient {
     pub fn new(url: String) -> Result<Self, SimulationError> {
         // build the real client from the channel:
         let channel = Endpoint::from_shared(url)
-            .map_err(|_| SimulationError::OtherError(format!("Failed to get url from shared")))?
+            .map_err(|_| SimulationError::OtherError("Failed to get url from shared".into()))?
             .connect_lazy();
         let inner = ObstacleAvoidanceServiceClient::new(channel);
         Ok(Self { inner })
