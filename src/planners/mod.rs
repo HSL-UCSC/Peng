@@ -4,8 +4,6 @@ use crate::{parse_f32, parse_string, parse_vector3};
 use crate::{parse_uint, SimulationError};
 use async_trait::async_trait;
 use nalgebra::Vector3;
-use tonic::transport::Channel;
-use tonic::transport::Endpoint;
 
 mod circle;
 mod hover;
