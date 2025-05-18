@@ -6,13 +6,13 @@ fn main() {
 }
 
 fn run_tonic() {
-    let proto_path = env::var("OBSTACLE_AVOIDANCE_APIS")
-        .expect("OBSTACLE_AVOIDANCE_APIS not set");
+    let proto_path = env::var("OBSTACLE_AVOIDANCE_APIS").expect("OBSTACLE_AVOIDANCE_APIS not set");
 
     println!("{}", proto_path);
-    let proto_files = vec![
-        format!("{}/protos/hyrl_api/obstacle_avoidance.proto", proto_path),
-    ];
+    let proto_files = vec![format!(
+        "{}/protos/hyrl_api/obstacle_avoidance.proto",
+        proto_path
+    )];
 
     tonic_build::configure()
         .build_server(false)
