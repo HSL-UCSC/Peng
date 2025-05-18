@@ -68,16 +68,14 @@ jobs:
           # this checks out your main PQ repository on default branch
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Clone the branch (or folder) that actually holds your .proto files
-      # in your case rar/server_init is a branch in the same repo
       - name: Checkout HyRL-protos branch
         uses: actions/checkout@v4
         with:
           repository: HSL-UCSC/Quad-RL
           path: hyrl-protos
 
-      # Now hyrl-protos/ contains protos/hyrl_api/obstacle_avoidance.proto, etc.
       - name: Export OBSTACLE_AVOIDANCE_APIS
+        shell: bash
         run: |
           echo "OBSTACLE_AVOIDANCE_APIS=${{ github.workspace }}/hyrl-protos" >> $GITHUB_ENV
 
