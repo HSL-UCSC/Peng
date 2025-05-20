@@ -52,7 +52,6 @@ pub mod planners;
 pub mod quadrotor;
 pub mod sensors;
 pub mod sync;
-use serde_json::{from_str, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -513,34 +512,26 @@ impl Quadrotor {
 /// let pid_controller = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
 /// ```
 pub struct PIDController {
-    /// PID gain for position control including proportional, derivative, and integral gains
     pub kpid_pos: [Vector3<f32>; 3],
-    /// PID gain for attitude control including proportional, derivative, and integral gains
     pub kpid_att: [Vector3<f32>; 3],
-    /// Accumulated integral error for position
     pub integral_pos_error: Vector3<f32>,
-    /// Accumulated integral error for attitude
     pub integral_att_error: Vector3<f32>,
-    /// Maximum allowed integral error for position
     pub max_integral_pos: Vector3<f32>,
-    /// Maximum allowed integral error for attitude
     pub max_integral_att: Vector3<f32>,
-    /// Mass of the quadrotor
     pub mass: f32,
-    /// Gravity constant
-    pub gravity: f32, // working against me
+    pub gravity: f32,
 
-    // only present when live‐tuning via NATS:
     #[cfg(feature = "tune")]
-    pub nats_conn: async_nats::Client,
+    pub nats_connection: async_nats::Client,
 }
 
+/// Struct of the Vector3's representing PID gains.
+/// The elements of the P, I, and D gains correspond to the x, y, and z axes respectively.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PIDGains {
-    /// PID gain for position control including proportional, derivative, and integral gains
-    pub kpid_pos: [Vector3<f32>; 3],
-    /// PID gain for attitude control including proportional, derivative, and integral gains
-    pub kpid_att: [Vector3<f32>; 3],
+    pub kp: Vector3<f32>,
+    pub kd: Vector3<f32>,
+    pub ki: Vector3<f32>,
 }
 
 /// Implementation of PIDController
@@ -574,6 +565,11 @@ impl PIDController {
         mass: f32,
         gravity: f32,
     ) -> Arc<Mutex<Self>> {
+        #[cfg(feature = "tune")]
+        let nats_connection = async_nats::connect("127.0.0.1:4222")
+            .await
+            .expect("failed to connect to nats");
+
         let controller = PIDController {
             kpid_pos: kpid_pos.map(Vector3::from),
             kpid_att: kpid_att.map(Vector3::from),
@@ -585,9 +581,7 @@ impl PIDController {
             gravity,
 
             #[cfg(feature = "tune")]
-            // connect to localhost NATS server
-            nats_conn: async_nats::connect("127.0.0.1:4222").await
-                .expect("failed to connect to nats"),
+            nats_connection,
         };
 
         let controller = Arc::new(Mutex::new(controller));
@@ -595,44 +589,98 @@ impl PIDController {
         #[cfg(feature = "tune")]
         {
             let ctl = controller.clone();
-            tokio::spawn(async move {
-                // Publish the controller’s initial PID‐pos gains:
-                {
-                    // grab a lock so we can read kpid_pos
-                    let locked = ctl.lock().await;
-                    // serialize the P‐gains for axis 0 as an example
-                    let initial_gains = PIDGains {
-                        kpid_pos: locked.kpid_pos,
-                        kpid_att: locked.kpid_att,
-                    };
-                    let payload = serde_json::to_string(&initial_gains)
-                        .expect("failed to serialize initial gains");
-                    // publish on "pid.gains"
-                    // note: `.await` is required, publish returns a Future
-                    locked
-                        .nats_conn
-                        .publish("pid.gains".to_string(), payload.into())
-                        .await
-                        .expect("failed to publish initial gains");
-                }
 
-                // Subscribe and listen for updates
-                let mut sub = ctl
+            // Publish initial gains via JetStream
+            {
+                let locked = ctl.lock().await;
+                let initial_gains_pos = PIDGains {
+                    kp: locked.kpid_pos[0],
+                    kd: locked.kpid_pos[1],
+                    ki: locked.kpid_pos[2],
+                };
+                let payload_pos =
+                    serde_json::to_string(&initial_gains_pos).expect("failed to serialize gains");
+
+                locked
+                    .nats_connection
+                    .publish("pid.gains.pos".to_string(), payload_pos.into())
+                    .await
+                    .expect("failed to publish initial gains");
+
+                let initial_gains_att = PIDGains {
+                    kp: locked.kpid_att[0],
+                    kd: locked.kpid_att[1],
+                    ki: locked.kpid_att[2],
+                };
+                let payload_att =
+                    serde_json::to_string(&initial_gains_att).expect("failed to serialize gains");
+
+                locked
+                    .nats_connection
+                    .publish("pid.gains.pos".to_string(), payload_att.into())
+                    .await
+                    .expect("failed to publish initial gains");
+
+                locked.nats_connection.flush().await.expect("flush failed");
+            }
+
+            // Start JetStream subscriber for knob updates
+            tokio::spawn(async move {
+                let sub = ctl
                     .lock()
                     .await
-                    .nats_conn
-                    .subscribe("pid.gains".to_string())
+                    .nats_connection
+                    .subscribe("pid.gains.>".to_string())
                     .await
                     .expect("nats subscribe failed");
 
                 use futures::StreamExt;
+                futures::pin_mut!(sub);
                 while let Some(msg) = sub.next().await {
-                    if let Ok(text) = std::str::from_utf8(&msg.payload) {
-                        if let Ok(new_p) = serde_json::from_str::<PIDGains>(text) {
-                            let mut locked = ctl.lock().await;
-                            locked.kpid_pos = new_p.kpid_pos;
-                            locked.kpid_att = new_p.kpid_pos;
+                    let tokens: Vec<&str> = msg.subject.split('.').collect();
+                    if tokens.len() != 5 {
+                        eprintln!("Unexpected topic format: {}", msg.subject);
+                        continue;
+                    }
+
+                    let axis = match tokens[4] {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        _ => {
+                            eprintln!("Unexpected axis in subject: {}", msg.subject);
+                            continue;
                         }
+                    };
+
+                    let gain_type = tokens[3];
+                    let target = tokens[2];
+
+                    if let Ok(text) = std::str::from_utf8(&msg.payload) {
+                        if let Ok(value) = text.parse::<f32>() {
+                            let mut locked = ctl.lock().await;
+                            match (target, gain_type) {
+                                ("pos", "kp") => locked.kpid_pos[0][axis] = value,
+                                ("pos", "kd") => locked.kpid_pos[1][axis] = value,
+                                ("pos", "ki") => locked.kpid_pos[2][axis] = value,
+                                ("att", "kp") => locked.kpid_att[0][axis] = value,
+                                ("att", "kd") => locked.kpid_att[1][axis] = value,
+                                ("att", "ki") => locked.kpid_att[2][axis] = value,
+                                _ => {
+                                    eprintln!("Unexpected gain type or target: {}", msg.subject);
+                                    continue;
+                                }
+                            }
+
+                            println!(
+                                "Updated {}.{}.{} to {}",
+                                target, gain_type, tokens[4], value
+                            );
+                        } else {
+                            eprintln!("Failed to parse value for {}: {:?}", msg.subject, text);
+                        }
+                    } else {
+                        eprintln!("Non-UTF8 payload for subject: {}", msg.subject);
                     }
                 }
             });
