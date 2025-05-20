@@ -29,7 +29,9 @@
           pre-commit
           rerun
           protobuf
-        ];
+        ]
+        ++ (if stdenv.isLinux then [ pkg-config systemd ] else []);
+
         shellHook = ''
           export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
           echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"

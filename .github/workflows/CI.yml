@@ -39,7 +39,7 @@ jobs:
             nix-${{ runner.os }}-
 
       - name: Install system dependencies (Linux only)
-        if: runner.os == 'Linux'
+        if: runner.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
 
       - name: Enter Nix flake shell & Build
@@ -58,27 +58,26 @@ jobs:
         run: |
           nix develop --command cargo clippy -- -D warnings
 
-  windows-build: # Job for Windows using original setup
+  windows-build:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Checkout main repository
+        uses: actions/checkout@v4
         with:
-          path: ~/.cargo/registry
-          key: windows-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            windows-cargo-registry-
+          # this checks out your main PQ repository on default branch
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache Cargo build
-        uses: actions/cache@v3
+      - name: Checkout HyRL-protos branch
+        uses: actions/checkout@v4
         with:
-          path: target
-          key: windows-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            windows-cargo-build-
+          repository: HSL-UCSC/Quad-RL
+          path: hyrl-protos
+
+      - name: Export OBSTACLE_AVOIDANCE_APIS
+        shell: bash
+        run: |
+          echo "OBSTACLE_AVOIDANCE_APIS=${{ github.workspace }}/hyrl-protos" >> $GITHUB_ENV
 
       - name: Install Protobuf on Windows
         run: |
