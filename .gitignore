@@ -25,3 +25,5 @@ target/
 
 # Logs
 logs/
+
+target-install/
