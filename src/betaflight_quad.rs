@@ -7,6 +7,9 @@ use nalgebra::{UnitQuaternion, Vector3};
 use std::time::Duration;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
+use tokio::sync::watch;
+use std::f32::consts::PI;
+
 
 /// Represents a physical quadrotor running a Betaflight controller.
 pub struct BetaflightQuad {
@@ -39,7 +42,7 @@ impl BetaflightQuad {
             let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
             let producer_clone = producer.clone();
             let config_clone = config.clone();
-            let subject_name = config.clone().id;
+            let subject_name = config.clone().quadrotor_config.id;
             tokio::spawn(async move {
                 let _ =
                     feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
@@ -143,11 +146,11 @@ impl QuadrotorInterface for BetaflightQuad {
     ) -> Result<Option<(f32, Vector3<f32>)>, SimulationError> {
         {
             // Given thrust and torque, calculate the control inputs
-            // Clamp thrust and torque control inputs
+            // Clamp thrust and torque control inputs5
             let _max_thrust = self.max_thrust();
             let _max_torque = self.max_torque();
             self.previous_thrust = thrust;
-            let thrust_ppm = scale_control(thrust, 0.0_f32, 1.75_f32);
+            let thrust_ppm = scale_control(thrust, 0.0_f32, 1.0_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
             let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
             let rudder_ppm = scale_control(-torque.z, -15_f32, 15_f32);
@@ -355,19 +358,53 @@ async fn feedback_loop(
     id: &str,
     tx: watch::Sender<Option<vicon_sys::ViconSubject>>,
 ) -> Result<(), SimulationError> {
-    let mut vicon = vicon_sys::sys::ViconSystem::new("localhost")
-        .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+    let mut vicon = vicon_sys::sys::ViconSystem::new(address)
+        .map_err(|e| {
+            println!("Failed to connect to VICON at {}: {}", address, e);
+            SimulationError::OtherError(e.to_string())
+        })?;
+    println!("Connected to Vicon at {}", address);
+
     loop {
-        // FIXME: vicon operating mode check block
-        if let Ok(subjects) = vicon.read_frame_subjects(vicon_sys::OutputRotation::Quaternion) {
-            // TODO: add search for all subjects
-            if let Some(sample) = subjects.first() {
-                if sample.name == id {
+        match vicon.read_frame_subjects(vicon_sys::OutputRotation::Quaternion) {
+            Ok(subjects) => {
+                // Print all subject names in the frame
+                let subject_names: Vec<&str> = subjects.iter().map(|s| s.name.as_str()).collect();
+                println!("Received frame with subjects: {:?}", subject_names);
+
+                // Look for the desired subject (e.g., "mob8")
+                if let Some(sample) = subjects.iter().find(|s| s.name == id) {
+                    // Print position (origin is [x, y, z])
+                    let position = sample.origin;
+                    println!(
+                        "Subject {} position: x={:.3}, y={:.3}, z={:.3} (meters)",
+                        id, position[0], position[1], position[2]
+                    );
+
+                    // Print quaternion rotation
+                    if let vicon_sys::RotationType::Quaternion(q) = &sample.rotation {
+                        println!(
+                            "Subject {} quaternion: w={:.3}, i={:.3}, j={:.3}, k={:.3}",
+                            id, q.w, q.i, q.j, q.k
+                        );
+                    } else {
+                        println!("Subject {} rotation: Non-quaternion format", id);
+                    }
+
+                    // Send the data through the watch channel
                     tx.send(Some(sample.clone()))
-                        .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+                        .map_err(|e| {
+                            println!("Failed to send Vicon data: {}", e);
+                            SimulationError::OtherError(e.to_string())
+                        })?;
+                } else {
+                    println!("Subject {} not found in frame", id);
                 }
             }
-        };
+            Err(e) => {
+                println!("Error reading Vicon frame: {}", e);
+            }
+        }
     }
 }
 

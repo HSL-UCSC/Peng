@@ -20,6 +20,13 @@ keywords = ["quadrotor", "quadcopter", "robotics", "drone", "simulation"]
 readme = "README.md"
 default-run = "peng_quad"
 
+[package.metadata]
+build = """
+fn main() {
+    println!("cargo:rustc-link-search=native=C:\\\\Program Files\\\\Vicon\\\\DataStream SDK\\\\Win64\\\\CPP");
+}
+"""
+
 [profile.dev]
 opt-level = 1 # Enable a small amount of optimization in the dev profile.
 [profile.dev.package."*"]
