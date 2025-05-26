@@ -45,7 +45,7 @@ imu:
 maze:
   lower_bounds: [-4.0, -2.0, 0.0] # Lower bounds of the maze [x, y, z] (m)
   upper_bounds: [4.0, 2.0, 2.0] # Upper bounds of the maze [x, y, z] (m)
-  num_obstacles: 20 # Number of obstacles in the maze
+  num_obstacles: 0 # Number of obstacles in the maze
   obstacles_velocity_bounds: [0.2, 0.2, 0.1] # Maximum velocity of obstacles [x, y, z] (m/s)
   obstacles_radius_bounds: [0.05, 0.1] # Range of obstacle radii [min, max] (m)
 
@@ -67,22 +67,23 @@ planner_schedule:
     params:
       start_position: [0.0, 0.0, 0.0] # Target end position [x, y, z] (m)
       start_yaw: 0.0
-      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
-      end_yaw: 0.0 # Target end yaw angle (rad)
-      duration: 2.5 # Duration of the trajectory (s)
+      end_position: [-1.5, 0.0, 1.0] # Target end position [x, y, z] (m)
+      end_yaw: -0.942019 # Target end yaw angle (rad)
+      duration: 9.0 # Duration of the trajectory (s)
 
   # Minimum Snap Waypoint trajectory
-  - time: 5.0
+  - time: 10.0
     planner_type: HyRL
     params:
       start_yaw: 0.0
-      num_waypoints: 50
+      num_waypoints: 500
       url: http://127.0.0.1:50051
-      target_position: [1.5, 0.0, 1.0]
+      start_position: [-1.5, 0.0, 1.0]
+      target_position: [3.5, 0.0, 1.0]
       duration: 10.0
 
   # Landing trajectory
-  - time: 15
+  - time: 25.0
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)
