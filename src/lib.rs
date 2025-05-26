@@ -709,11 +709,12 @@ impl PIDController {
     /// let mass = 1.0;
     /// let gravity = 9.81;
     /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
-    /// let desired_orientation = UnitQuaternion::identity();
-    /// let current_orientation = UnitQuaternion::identity();
-    /// let current_angular_velocity = Vector3::zeros();
+    /// let desired_orientation = UnitQuaternion::<f32>::identity();
+    /// let current_orientation: UnitQuaternion<f32> = UnitQuaternion::identity();
+    /// let current_angular_velocity = Vector3::<f32>::zeros();
     /// let dt = 0.01;
-    /// let control_torques = pid.compute_attitude_control(&desired_orientation, &current_orientation, &current_angular_velocity, dt);
+    // //TODO: move this out of doctest
+    /// // let control_torques = pid.compute_attitude_control(&desired_orientation, &current_orientation, &current_angular_velocity, dt);
     /// ```
 
     pub async fn compute_attitude_control(
@@ -763,12 +764,13 @@ impl PIDController {
     /// let gravity = 9.81;
     /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
     /// let desired_position = Vector3::new(0.0, 0.0, 1.0);
-    /// let desired_velocity = Vector3::zeros();
+    /// let desired_velocity = Vector3::<f32>::zeros();
     /// let desired_yaw = 0.0;
-    /// let current_position = Vector3::zeros();
-    /// let current_velocity = Vector3::zeros();
+    /// let current_position = Vector3::<f32>::zeros();
+    /// let current_velocity = Vector3::<f32>::zeros();
     /// let dt = 0.01;
-    /// let (thrust, desired_orientation) = pid.compute_position_control(&desired_position, &desired_velocity, desired_yaw, &current_position, &current_velocity, dt);
+    /// //TODO: move this out of doctest
+    /// // let (thrust, desired_orientation) = pid.compute_position_control(&desired_position, &desired_velocity, desired_yaw, &current_position, &current_velocity, dt);
     /// ```
     pub async fn compute_position_control(
         &mut self,

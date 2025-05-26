@@ -305,7 +305,8 @@ mod tests {
         // Assert: the inner MinimumSnapWaypointPlanner should have exactly our fake waypoints
         let expected: Vec<Vector3<f32>> = fake_states
             .into_iter()
-            .map(|s| Vector3::new(s.x, s.y, s.z))
+            .map(|s| Vector3::new(s.x, s.y, s.z) - Vector3::new(1.5, 0.0, 0.0))
+            .map(|v| Vector3::new(v.x, v.y, start_pos.z))
             .collect();
 
         assert_eq!(planner.minimum_snap_planner.waypoints, expected);

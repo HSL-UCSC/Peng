@@ -92,7 +92,7 @@ impl Trajectory {
 /// ```
 /// use peng_quad::planners::PlannerStepConfig;
 /// let step = PlannerStepConfig {
-///     step: 0,
+///     step: Some(0),
 ///     time: None,
 ///     planner_type: "MinimumJerkLocalPlanner".to_string(),
 ///     params: serde_yaml::Value::Null,
@@ -323,7 +323,7 @@ impl PlannerManager {
     /// use nalgebra::Vector3;
     ///
     /// let step = PlannerStepConfig {
-    ///     step: 0,
+    ///     step: Some(0),
     ///     time: None,
     ///     planner_type: "MinimumJerkLine".to_string(),
     ///     params:
