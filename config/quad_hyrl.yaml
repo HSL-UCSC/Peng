@@ -65,20 +65,24 @@ planner_schedule:
   - time: 1.0 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
+      start_position: [0.0, 0.0, 0.0] # Target end position [x, y, z] (m)
+      start_yaw: 0.0
       end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
       end_yaw: 0.0 # Target end yaw angle (rad)
       duration: 2.5 # Duration of the trajectory (s)
 
   # Minimum Snap Waypoint trajectory
-  - step: 5.0
+  - time: 5.0
     planner_type: HyRL
     params:
-      url: http://localhost:50051
+      start_yaw: 0.0
+      num_waypoints: 50
+      url: http://127.0.0.1:50051
       target_position: [1.5, 0.0, 1.0]
       duration: 10.0
 
   # Landing trajectory
-  - step: 15000
+  - time: 15
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)
