@@ -8,7 +8,7 @@ use nalgebra::Matrix3;
 
 use crate::SimulationError;
 
-use serde::de::{Deserializer, Error};
+use serde::de::{self, Deserializer, Error};
 use serde::Deserialize;
 use serde_yaml::Value;
 
@@ -47,17 +47,47 @@ pub struct Config {
     pub angle_limits: Option<Vec<f32>>,
 }
 
-#[derive(Clone, serde::Deserialize)]
+#[derive(Clone)]
 /// Configuration for a planner step
 pub struct PlannerStep {
     /// Step number that the planner should be executed (Unit: ms)
-    pub step: usize,
+    pub step: Option<usize>,
     /// Time that the planner should become active (Unit: ms)
     pub time: Option<f32>,
     /// Type of planner to use
     pub planner_type: String,
     /// Parameters for the planner
     pub params: serde_yaml::Value,
+}
+
+impl<'de> Deserialize<'de> for PlannerStep {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawPlannerStep {
+            step: Option<usize>,
+            time: Option<f32>,
+            planner_type: String,
+            params: serde_yaml::Value,
+        }
+
+        let raw = RawPlannerStep::deserialize(deserializer)?;
+
+        if raw.step.is_none() && raw.time.is_none() {
+            return Err(de::Error::custom(
+                "At least one of `step` or `time` must be specified",
+            ));
+        }
+
+        Ok(PlannerStep {
+            step: raw.step,
+            time: raw.time,
+            planner_type: raw.planner_type,
+            params: raw.params,
+        })
+    }
 }
 
 #[derive(Clone, serde::Deserialize)]
