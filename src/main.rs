@@ -238,21 +238,25 @@ fn quadrotor_worker(
                 .await
                 .expect("failed to calculate inner loop control");
 
-            let (thrust, desired_orientation) = controller.compute_position_control(
-                &desired_position,
-                &desired_velocity,
-                desired_yaw,
-                &quad_state.position,
-                &quad_state.velocity,
-                simulation_period,
-            );
+            let (thrust, desired_orientation) = controller
+                .compute_position_control(
+                    &desired_position,
+                    &desired_velocity,
+                    desired_yaw,
+                    &quad_state.position,
+                    &quad_state.velocity,
+                    simulation_period,
+                )
+                .await;
 
-            let torque = controller.compute_attitude_control(
-                &desired_orientation,
-                &quad_state.orientation,
-                &quad_state.angular_velocity,
-                simulation_period,
-            );
+            let torque = controller
+                .compute_attitude_control(
+                    &desired_orientation,
+                    &quad_state.orientation,
+                    &quad_state.angular_velocity,
+                    simulation_period,
+                )
+                .await;
             // TODO: cleanup the return type of the control method
             let (thrust_out, torque_out) = match quad
                 .control(step as usize, thrust, &torque)

@@ -512,8 +512,8 @@ impl Quadrotor {
 /// let pid_controller = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
 /// ```
 pub struct PIDController {
-    pub kpid_pos: [Vector3<f32>; 3],
-    pub kpid_att: [Vector3<f32>; 3],
+    pub kpid_pos: Arc<Mutex<[Vector3<f32>; 3]>>,
+    pub kpid_att: Arc<Mutex<[Vector3<f32>; 3]>>,
     pub integral_pos_error: Vector3<f32>,
     pub integral_att_error: Vector3<f32>,
     pub max_integral_pos: Vector3<f32>,
@@ -570,69 +570,68 @@ impl PIDController {
             .await
             .expect("failed to connect to nats");
 
-        let controller = PIDController {
-            kpid_pos: kpid_pos.map(Vector3::from),
-            kpid_att: kpid_att.map(Vector3::from),
+        let controller = Arc::new(Mutex::new(PIDController {
+            kpid_pos: Arc::new(Mutex::new(kpid_pos.map(Vector3::from))),
+            kpid_att: Arc::new(Mutex::new(kpid_att.map(Vector3::from))),
             integral_pos_error: Vector3::zeros(),
             integral_att_error: Vector3::zeros(),
             max_integral_pos: Vector3::from(max_integral_pos),
             max_integral_att: Vector3::from(max_integral_att),
             mass,
             gravity,
-
             #[cfg(feature = "tune")]
             nats_connection,
-        };
-
-        let controller = Arc::new(Mutex::new(controller));
+        }));
 
         #[cfg(feature = "tune")]
         {
             let ctl = controller.clone();
+            let client = ctl.lock().await.nats_connection.clone();
+            let kpid_pos = ctl.lock().await.kpid_pos.clone();
+            let kpid_att = ctl.lock().await.kpid_att.clone();
 
-            // Publish initial gains via JetStream
             {
-                let locked = ctl.lock().await;
+                println!("Publishing initial PID gains...");
+                let kpid_pos_locked = kpid_pos.lock().await;
+                let kpid_att_locked = kpid_att.lock().await;
+
                 let initial_gains_pos = PIDGains {
-                    kp: locked.kpid_pos[0],
-                    kd: locked.kpid_pos[1],
-                    ki: locked.kpid_pos[2],
+                    kp: kpid_pos_locked[0],
+                    kd: kpid_pos_locked[1],
+                    ki: kpid_pos_locked[2],
                 };
                 let payload_pos =
                     serde_json::to_string(&initial_gains_pos).expect("failed to serialize gains");
 
-                locked
-                    .nats_connection
-                    .publish("pid.gains.pos".to_string(), payload_pos.into())
+                client
+                    .publish("pid.gains.pos", payload_pos.into())
                     .await
-                    .expect("failed to publish initial gains");
+                    .expect("failed to publish pos gains");
 
                 let initial_gains_att = PIDGains {
-                    kp: locked.kpid_att[0],
-                    kd: locked.kpid_att[1],
-                    ki: locked.kpid_att[2],
+                    kp: kpid_att_locked[0],
+                    kd: kpid_att_locked[1],
+                    ki: kpid_att_locked[2],
                 };
                 let payload_att =
                     serde_json::to_string(&initial_gains_att).expect("failed to serialize gains");
 
-                locked
-                    .nats_connection
-                    .publish("pid.gains.pos".to_string(), payload_att.into())
+                client
+                    .publish("pid.gains.att", payload_att.into())
                     .await
-                    .expect("failed to publish initial gains");
+                    .expect("failed to publish att gains");
 
-                locked.nats_connection.flush().await.expect("flush failed");
+                client.flush().await.expect("flush failed");
             }
 
-            // Start JetStream subscriber for knob updates
             tokio::spawn(async move {
-                let sub = ctl
-                    .lock()
-                    .await
-                    .nats_connection
+                println!("NATS subscription task started");
+                let sub = client
                     .subscribe("pid.gains.>".to_string())
                     .await
                     .expect("nats subscribe failed");
+
+                println!("Subscribed to NATS topic");
 
                 use futures::StreamExt;
                 futures::pin_mut!(sub);
@@ -658,14 +657,15 @@ impl PIDController {
 
                     if let Ok(text) = std::str::from_utf8(&msg.payload) {
                         if let Ok(value) = text.parse::<f32>() {
-                            let mut locked = ctl.lock().await;
+                            println!("Received: subject = {}, value = {}", msg.subject, value);
+
                             match (target, gain_type) {
-                                ("pos", "kp") => locked.kpid_pos[0][axis] = value,
-                                ("pos", "kd") => locked.kpid_pos[1][axis] = value,
-                                ("pos", "ki") => locked.kpid_pos[2][axis] = value,
-                                ("att", "kp") => locked.kpid_att[0][axis] = value,
-                                ("att", "kd") => locked.kpid_att[1][axis] = value,
-                                ("att", "ki") => locked.kpid_att[2][axis] = value,
+                                ("pos", "p") => kpid_pos.lock().await[0][axis] = value,
+                                ("pos", "d") => kpid_pos.lock().await[1][axis] = value,
+                                ("pos", "i") => kpid_pos.lock().await[2][axis] = value,
+                                ("att", "p") => kpid_att.lock().await[0][axis] = value,
+                                ("att", "d") => kpid_att.lock().await[1][axis] = value,
+                                ("att", "i") => kpid_att.lock().await[2][axis] = value,
                                 _ => {
                                     eprintln!("Unexpected gain type or target: {}", msg.subject);
                                     continue;
@@ -715,17 +715,14 @@ impl PIDController {
     /// let dt = 0.01;
     /// let control_torques = pid.compute_attitude_control(&desired_orientation, &current_orientation, &current_angular_velocity, dt);
     /// ```
-    pub fn compute_attitude_control(
+
+    pub async fn compute_attitude_control(
         &mut self,
         desired_orientation: &UnitQuaternion<f32>,
         current_orientation: &UnitQuaternion<f32>,
         current_angular_velocity: &Vector3<f32>,
         dt: f32,
     ) -> Vector3<f32> {
-        // dbg!(desired_orientation);
-        // dbg!(current_orientation);
-        // dbg!(current_angular_velocity);
-        // let frame = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), PI);
         let error_orientation = current_orientation.inverse() * desired_orientation;
         let (roll_error, pitch_error, yaw_error) = error_orientation.euler_angles();
         let error_angles = Vector3::new(roll_error, pitch_error, yaw_error);
@@ -733,11 +730,14 @@ impl PIDController {
         self.integral_att_error = self
             .integral_att_error
             .zip_map(&self.max_integral_att, |int, max| int.clamp(-max, max));
-        let error_angular_velocity = -current_angular_velocity; // TODO: Add desired angular velocity
-        self.kpid_att[0].component_mul(&error_angles)
-            + self.kpid_att[1].component_mul(&error_angular_velocity)
-            + self.kpid_att[2].component_mul(&self.integral_att_error)
+        let error_angular_velocity = -current_angular_velocity;
+
+        let kpid_att = self.kpid_att.lock().await;
+        kpid_att[0].component_mul(&error_angles)
+            + kpid_att[1].component_mul(&error_angular_velocity)
+            + kpid_att[2].component_mul(&self.integral_att_error)
     }
+
     /// Computes position control thrust and desired orientation
     /// # Arguments
     /// * `desired_position` - The desired position
@@ -770,7 +770,7 @@ impl PIDController {
     /// let dt = 0.01;
     /// let (thrust, desired_orientation) = pid.compute_position_control(&desired_position, &desired_velocity, desired_yaw, &current_position, &current_velocity, dt);
     /// ```
-    pub fn compute_position_control(
+    pub async fn compute_position_control(
         &mut self,
         desired_position: &Vector3<f32>,
         desired_velocity: &Vector3<f32>,
@@ -785,13 +785,17 @@ impl PIDController {
         self.integral_pos_error = self
             .integral_pos_error
             .zip_map(&self.max_integral_pos, |int, max| int.clamp(-max, max));
-        let acceleration = self.kpid_pos[0].component_mul(&error_position)
-            + self.kpid_pos[1].component_mul(&error_velocity)
-            + self.kpid_pos[2].component_mul(&self.integral_pos_error);
+
+        let kpid_pos = self.kpid_pos.lock().await;
+        let acceleration = kpid_pos[0].component_mul(&error_position)
+            + kpid_pos[1].component_mul(&error_velocity)
+            + kpid_pos[2].component_mul(&self.integral_pos_error);
+
         let gravity_compensation = Vector3::new(0.0, 0.0, self.gravity);
         let total_acceleration = acceleration + gravity_compensation;
         let total_acc_norm = total_acceleration.norm();
         let thrust = self.mass * total_acc_norm;
+
         let desired_orientation = if total_acc_norm > 1e-3 {
             let z_body = total_acceleration / total_acc_norm;
             let yaw_rotation = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), desired_yaw);
@@ -804,6 +808,7 @@ impl PIDController {
         } else {
             UnitQuaternion::from_euler_angles(0.0, 0.0, desired_yaw)
         };
+
         (thrust, desired_orientation)
     }
 }
