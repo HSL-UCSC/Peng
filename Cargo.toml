@@ -44,7 +44,7 @@ cyber_rc = { git = "https://github.com/friend0/CyberRC.git" }
 serialport = "4.6.0"
 tempfile = "3.14.0"
 vicon-sys = { git = "https://github.com/HSL-UCSC/vicon-rs.git", branch = "lnx", optional = true }
-rerun = "0.21.0"
+rerun = "0.22.0"
 colored = "2.2.0"
 futures = "0.3.31"
 prost = "0.13.3"
@@ -59,7 +59,7 @@ async-nats = { version = "0.41.0", optional = true }
 vicon = ["dep:vicon-sys"]
 hyrl = []
 tune = ["dep:async-nats"]
-default = ["hyrl", "tune"]
+default = ["hyrl"]
 
 [build-dependencies]
 tonic-build = "0.12.3"
