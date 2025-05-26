@@ -92,7 +92,7 @@ impl Trajectory {
 /// ```
 /// use peng_quad::planners::PlannerStepConfig;
 /// let step = PlannerStepConfig {
-///     step: 0,
+///     step: Some(0),
 ///     time: None,
 ///     planner_type: "MinimumJerkLocalPlanner".to_string(),
 ///     params: serde_yaml::Value::Null,
@@ -100,7 +100,7 @@ impl Trajectory {
 /// ```
 pub struct PlannerStepConfig {
     /// The simulation step at which this planner should be activated (in ms unit).
-    pub step: usize,
+    pub step: Option<usize>,
     /// The simulation time at which this planner should be activated (in ms unit).
     pub time: Option<f32>,
     /// The type of planner to use for this step.
@@ -240,6 +240,7 @@ pub trait Planner {
 pub struct PlannerManager {
     /// The current planner
     pub current_planner: PlannerType,
+    pub current_planner_idx: i32,
 }
 /// Implementation of the PlannerManager
 impl PlannerManager {
@@ -267,6 +268,7 @@ impl PlannerManager {
         let channel = None;
         Self {
             current_planner: PlannerType::Hover(hover_planner),
+            current_planner_idx: -1,
         }
     }
 
@@ -321,7 +323,7 @@ impl PlannerManager {
     /// use nalgebra::Vector3;
     ///
     /// let step = PlannerStepConfig {
-    ///     step: 0,
+    ///     step: Some(0),
     ///     time: None,
     ///     planner_type: "MinimumJerkLine".to_string(),
     ///     params:
@@ -459,6 +461,7 @@ impl PlannerManager {
             "HyRL" => {
                 let url = parse_string(params, "url")?;
                 let client = hyrl::HyRLClient::new(url)?;
+                println!("Creating HyRL Planner---------");
                 HyRLPlanner::new(
                     quad_state.position,
                     parse_f32(params, "start_yaw")?,
@@ -533,20 +536,34 @@ impl PlannerManager {
         obstacles: &[Obstacle],
         planner_config: &[PlannerStepConfig],
     ) -> Result<(Vector3<f32>, Vector3<f32>, f32), SimulationError> {
-        // 1) Time‐based switch: look for the *first* config whose time >= now
-        if let Some(ps) = planner_config
+        // println!("{:?}", planner_config);
+        // println!("Time: {:.2} s,\tStep {}", time, step);
+        if let Some((idx, ps)) = planner_config
             .iter()
-            .find(|ps| ps.time.map(|t| t >= time).unwrap_or(false))
+            .enumerate()
+            .rev()
+            .find(|(_, ps)| ps.time.map(|t| time >= t).unwrap_or(false))
         {
-            log::info!("Time: {:.2} s,\tSwitch {}", time, ps.planner_type);
-            let new_planner = self.create_planner(ps, quad_state, time, obstacles).await?;
-            self.current_planner = new_planner;
-        }
-        // 2) Step‐based switch, if no time‐match (or you want step overrides)
-        else if let Some(ps) = planner_config.iter().find(|ps| ps.step == step) {
-            log::info!("Step {}:\tSwitch {}", step, ps.planner_type);
-            let new_planner = self.create_planner(ps, quad_state, time, obstacles).await?;
-            self.current_planner = new_planner;
+            if self.current_planner_idx != idx as i32 {
+                log::info!("Time: {:.2} s,\tSwitch {}", time, ps.planner_type);
+                println!("Time: {:.2} s,\tSwitch {}", time, ps.planner_type);
+                let new_planner = self.create_planner(ps, quad_state, time, obstacles).await?;
+                self.current_planner = new_planner;
+                self.current_planner_idx = idx as i32;
+            }
+        } else if let Some((idx, ps)) = planner_config
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, ps)| ps.step.map(|s| s == step).unwrap_or(false))
+        {
+            if self.current_planner_idx != idx as i32 {
+                log::info!("Step {}:\tSwitch {}", step, ps.planner_type);
+                println!("Step: {:.2} s,\tSwitch {}", time, ps.planner_type);
+                let new_planner = self.create_planner(ps, quad_state, time, obstacles).await?;
+                self.current_planner = new_planner;
+                self.current_planner_idx = idx as i32;
+            }
         }
 
         // 3) If the active planner needs obstacle updates (e.g. obstacle avoidance)

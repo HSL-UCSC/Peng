@@ -6,7 +6,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
     oaapis = {
-      url   = "github:HSL-UCSC/Quad-RL/rar/server_init";
+      url   = "github:HSL-UCSC/Quad-RL";
       flake = false;
     };
   };

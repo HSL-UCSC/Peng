@@ -50,16 +50,15 @@
     "oaapis": {
       "flake": false,
       "locked": {
-        "lastModified": 1746997889,
-        "narHash": "sha256-PA1p9XGe2/3oGky+0qGGYF+L+wmHcRRD46XOLgFccKM=",
+        "lastModified": 1748221212,
+        "narHash": "sha256-POyRF1Lu/DiiRHuQePz4oSsd0phZZX1PgUDnIbqwM/8=",
         "owner": "HSL-UCSC",
         "repo": "Quad-RL",
-        "rev": "7fceb15776e442969624b55250f24a24eed0834d",
+        "rev": "ff0fb03c3366cea007fc069135615ac729f11450",
         "type": "github"
       },
       "original": {
         "owner": "HSL-UCSC",
-        "ref": "rar/server_init",
         "repo": "Quad-RL",
         "type": "github"
       }
