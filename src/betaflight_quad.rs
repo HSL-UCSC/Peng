@@ -5,8 +5,11 @@ use crate::SimulationError;
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
 use std::time::Duration;
+use tokio::sync::watch;
+use std::f32::consts::PI;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
+
 
 /// Represents a physical quadrotor running a Betaflight controller.
 pub struct BetaflightQuad {
@@ -39,7 +42,7 @@ impl BetaflightQuad {
             let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
             let producer_clone = producer.clone();
             let config_clone = config.clone();
-            let subject_name = config.clone().id;
+            let subject_name = config.clone().quadrotor_config.id;
             tokio::spawn(async move {
                 let _ =
                     feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
