@@ -71,28 +71,38 @@ mesh:
 
 planner_schedule:
   # Minimum Jerk Line trajectory
-  - time: 1.0 # Simulation step in ms to start this planner
+  - time: 3.0 # Simulation step in ms to start this planner
     planner_type: MinimumJerkLine
     params:
       start_position: [0.0, 0.0, 0.0] # Target end position [x, y, z] (m)
       start_yaw: 0.0
-      end_position: [-1.5, 0.0, 1.0] # Target end position [x, y, z] (m)
-      end_yaw: 1.1507944 # Target end yaw angle (rad)
-      duration: 9.0 # Duration of the trajectory (s)
+      end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+      end_yaw: 0 # Target end yaw angle (rad)
+      duration: 6.0 # Duration of the trajectory (s)
 
-  # Minimum Snap Waypoint trajectory
-  - time: 10.0
+  # Minimum Jerk Line trajectory
+  - time: 9.0 # Simulation step in ms to start this planner
+    planner_type: MinimumJerkLine
+    params:
+      start_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+      start_yaw: 0.0
+      end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
+      end_yaw: 0 # Target end yaw angle (rad)
+      duration: 10.0 # Duration of the trajectory (s)
+
+  # # Minimum Snap Waypoint trajectory
+  - time: 19.0
     planner_type: HyRL
     params:
       start_yaw: 0.0
       num_waypoints: 500 
       url: http://172.26.45.187:50052
-      start_position: [-1.5, 0.0, 1.0]
-      target_position: [3.5, 0.0, 1.0]
-      duration: 10.0
+      start_position: [-1.5, 0.0, 0.5]
+      target_position: [3.5, 0.0, 0.5]
+      duration: 15.0
 
   # Landing trajectory
-  - time: 25.0
+  - time: 34.0
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)
