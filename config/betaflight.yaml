@@ -1,13 +1,13 @@
 use_rerun: true # Enable visualization using rerun.io
 render_depth: true # Enable rendering depth
-file_logger: "standard"
+# file_logger: "standard"
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 
 rerun_blueprint: "config/hsl_blueprint.rbl"
 
 simulation:
-  control_frequency: 50 # Frequency of control loop execution (Hz)
-  simulation_frequency: 250 # Frequency of physics simulation updates (Hz)
+  control_frequency: 120 # Frequency of control loop execution (Hz)
+  simulation_frequency: 480 # Frequency of physics simulation updates (Hz)
   log_frequency: 20 # Frequency of data logging (Hz)
   duration: 60.0 # Total duration of the simulation (seconds)
   gravity: 9.81 # Gravitational acceleration (m/s^2)
@@ -33,12 +33,12 @@ quadrotor:
 
 pid_controller:
   pos_gains: # PID gains for position control
-    kp: [5.5, 5.5, 17.0] # Proportional gains [x, y, z]
-    kd: [4.5, 4.5, 5.7] # Derivative gains [x, y, z]
+    kp: [5.8, 5.8, 14.0] # Proportional gains [x, y, z]
+    kd: [3.8, 3.8, 5.7] # Derivative gains [x, y, z]
     ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
-    kp: [1.5, 1.5, 1.0] # Proportional gains [roll, pitch, yaw]
-    kd: [0.13, 0.13, 0.1] # Derivative gains [roll, pitch, yaw]
+    kp: [1.9, 1.9, 2.3] # Proportional gains [roll, pitch, yaw]
+    kd: [0.2, 0.2, 1.1] # Derivative gains [roll, pitch, yaw]
     ki: [0.0, 0.0, 0.0] # Integral gains [roll, pitch, yaw]
   pos_max_int: [10.0, 10.0, 10.0] # Maximum integral error for position control [x, y, z]
   att_max_int: [0.5, 0.5, 0.5] # Maximum integral error for attitude control [roll, pitch, yaw]
@@ -87,26 +87,26 @@ planner_schedule:
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       target_yaw: 0.0 # Target end yaw angle (rad)
 
-  # Minimum Jerk Line trajectory
-  - time: 9.0 # Simulation step in ms to start this planner
-    planner_type: MinimumJerkLine
-    params:
-      start_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
-      start_yaw: 0.0
-      end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
-      end_yaw: 0 # Target end yaw angle (rad)
-      duration: 10.0 # Duration of the trajectory (s)
+  # # Minimum Jerk Line trajectory
+  # - time: 9.0 # Simulation step in ms to start this planner
+  #   planner_type: MinimumJerkLine
+  #   params:
+  #     start_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+  #     start_yaw: 0.0
+  #     end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
+  #     end_yaw: 0 # Target end yaw angle (rad)
+  #     duration: 10.0 # Duration of the trajectory (s)
 
-  # Minimum Snap Waypoint trajectory
-  - time: 19.0
-    planner_type: HyRL
-    params:
-      start_yaw: 0.0
-      num_waypoints: 500 
-      url: http://172.26.45.187:50052
-      start_position: [-1.5, 0.0, 0.5]
-      target_position: [3.5, 0.0, 0.5]
-      duration: 30.0
+  # # Minimum Snap Waypoint trajectory
+  # - time: 19.0
+  #   planner_type: HyRL
+  #   params:
+  #     start_yaw: 0.0
+  #     num_waypoints: 500 
+  #     url: http://172.26.45.187:50052
+  #     start_position: [-1.5, 0.0, 0.5]
+  #     target_position: [3.5, 0.0, 0.5]
+  #     duration: 30.0
 
   # # Circular trajectory
   # - time: 30.0
@@ -119,7 +119,7 @@ planner_schedule:
   #     ramp_time: 2.0 # Time for smooth transition (s)
 
   # Landing trajectory
-  - time: 6000.0
+  - time: 120.0
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)
