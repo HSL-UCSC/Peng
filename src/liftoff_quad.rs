@@ -1,9 +1,10 @@
 use crate::config::{LiftoffQuadrotorConfig, SimulationConfig};
-use crate::quadrotor::{QuadrotorInterface, QuadrotorState, State};
+use crate::quadrotor::{OrientationFilter, QuadrotorInterface, QuadrotorState, State};
 use crate::SimulationError;
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
+use std::collections::VecDeque;
 use tokio::sync::watch;
 use tokio::time::Duration;
 
@@ -25,6 +26,8 @@ pub struct LiftoffQuad {
     pub previous_thrust: f32,
     /// Quadrotor sample mutex
     pub consumer: watch::Receiver<Option<Vec<u8>>>,
+    /// Orientation filter to smooth out the orientation readings
+    pub orientation_filter: OrientationFilter,
 }
 
 impl LiftoffQuad {
@@ -90,6 +93,7 @@ impl LiftoffQuad {
             config,
             previous_thrust: 0.0,
             consumer,
+            orientation_filter: OrientationFilter::new(),
         })
     }
 
@@ -269,13 +273,15 @@ impl QuadrotorInterface for LiftoffQuad {
         let omega_body = alpha * omega_body + (1.0 - alpha) * self.previous_state.angular_velocity;
         let acceleration_body = self.body_acceleration(v_body, self.previous_state.velocity, dt);
 
+        self.orientation_filter.add_sample(rotation);
+
         self.state = QuadrotorState {
             time: t,
             state: State {
                 position,
                 velocity: v_body,
                 acceleration: acceleration_body,
-                orientation: rotation,
+                orientation: self.orientation_filter.get_filtered(),
                 angular_velocity: omega_body,
             },
             ..Default::default()
