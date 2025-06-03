@@ -1,10 +1,12 @@
 #![allow(clippy::all, dead_code, unused_variables)]
 use crate::config::{Betaflight, QuadrotorConfig, SimulationConfig};
-use crate::quadrotor::{QuadrotorInterface, QuadrotorState};
+use crate::quadrotor::{OrientationFilter, QuadrotorInterface, QuadrotorState};
 use crate::SimulationError;
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
+use std::f32::consts::PI;
 use std::time::Duration;
+use tokio::sync::watch;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
 
@@ -24,6 +26,8 @@ pub struct BetaflightQuad {
     pub config: Betaflight,
     /// Previous Thrust
     pub previous_thrust: f32,
+    /// Orientation filter to smooth out the orientation readings
+    pub orientation_filter: OrientationFilter,
     /// Quadrotor sample mutex
     #[cfg(feature = "vicon")]
     pub consumer: watch::Receiver<Option<vicon_sys::ViconSubject>>,
@@ -39,7 +43,7 @@ impl BetaflightQuad {
             let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
             let producer_clone = producer.clone();
             let config_clone = config.clone();
-            let subject_name = config.clone().id;
+            let subject_name = config.clone().quadrotor_config.id;
             tokio::spawn(async move {
                 let _ =
                     feedback_loop(&config_clone.vicon_address, &subject_name, producer_clone).await;
@@ -84,6 +88,7 @@ impl BetaflightQuad {
             simulation_config,
             config,
             previous_thrust: 0.0,
+            orientation_filter: OrientationFilter::new(),
             #[cfg(feature = "vicon")]
             consumer,
         })
@@ -147,7 +152,7 @@ impl QuadrotorInterface for BetaflightQuad {
             let _max_thrust = self.max_thrust();
             let _max_torque = self.max_torque();
             self.previous_thrust = thrust;
-            let thrust_ppm = scale_control(thrust, 0.0_f32, 1.75_f32);
+            let thrust_ppm = scale_control(thrust, 0.0_f32, 1.0_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
             let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
             let rudder_ppm = scale_control(-torque.z, -15_f32, 15_f32);
@@ -201,6 +206,8 @@ impl QuadrotorInterface for BetaflightQuad {
         // Ideally, this will use the time steps or real time
         let dt = 1_f32 / 120_f32;
         let (position, rotation) = if sample.occluded() {
+            // TODO: failsafe for condition where oclusion lasts longer than N frames
+            println!("Warning! Vicon sample is occluded, extrapolating position and rotation");
             // Extrapolate the position
             let position = extrapolate_position(
                 self.previous_state.position,
@@ -218,17 +225,8 @@ impl QuadrotorInterface for BetaflightQuad {
             let alpha_position = 0.8;
             let position = alpha_position * sample.position()
                 + (1.0 - alpha_position) * self.previous_state.position;
-            // Low-pass filter the orientation
-            let alpha_rotation = 0.5;
-            let rotation = match self.previous_state.orientation.try_slerp(
-                &sample.rotation(),
-                alpha_rotation,
-                1e-6,
-            ) {
-                Some(rotation) => rotation,
-                None => sample.rotation(),
-            };
-            (position, rotation)
+            self.orientation_filter.add_sample(sample.rotation());
+            (position, self.orientation_filter.get_filtered())
         };
 
         let v_body = self.velocity_body(rotation, self.previous_state.position, position, dt);
