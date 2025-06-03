@@ -5,6 +5,7 @@ use crate::liftoff_quad::LiftoffQuad;
 use crate::Quadrotor;
 use crate::SimulationError;
 use nalgebra::{UnitQuaternion, Vector3};
+use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug, Default)]
@@ -101,4 +102,60 @@ pub fn build_quadrotor(
         ),
     };
     Ok((quad, mass))
+}
+
+const WINDOW_SIZE: usize = 8;
+
+pub struct OrientationFilter {
+    buffer: VecDeque<UnitQuaternion<f32>>,
+}
+
+impl OrientationFilter {
+    pub fn new() -> Self {
+        Self {
+            buffer: VecDeque::with_capacity(WINDOW_SIZE),
+        }
+    }
+
+    pub fn add_sample(&mut self, q: UnitQuaternion<f32>) {
+        if self.buffer.len() == WINDOW_SIZE {
+            self.buffer.pop_front();
+        }
+        self.buffer.push_back(q);
+    }
+
+    pub fn get_filtered(&self) -> UnitQuaternion<f32> {
+        self.quaternion_geodesic_mean(self.buffer.as_slices().0)
+    }
+
+    fn quaternion_geodesic_mean(&self, quaternions: &[UnitQuaternion<f32>]) -> UnitQuaternion<f32> {
+        assert!(!quaternions.is_empty());
+
+        let mut mean = quaternions[0];
+
+        for _ in 0..10 {
+            // iterative refinement
+            // Step 1: compute log difference to mean
+            let mut sum = Vector3::zeros();
+            for q in quaternions {
+                let delta = mean.inverse() * *q;
+
+                sum += delta.scaled_axis();
+            }
+
+            // Step 2: compute average tangent vector
+            sum /= quaternions.len() as f32;
+
+            // Step 3: apply average back to mean
+            let delta_mean = nalgebra::UnitQuaternion::from_scaled_axis(sum);
+            mean = mean * delta_mean;
+
+            // Early exit if update is very small
+            if sum.norm() < 1e-6 {
+                break;
+            }
+        }
+
+        mean
+    }
 }
