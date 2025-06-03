@@ -225,8 +225,19 @@ impl QuadrotorInterface for BetaflightQuad {
             let alpha_position = 0.8;
             let position = alpha_position * sample.position()
                 + (1.0 - alpha_position) * self.previous_state.position;
-            self.orientation_filter.add_sample(sample.rotation());
-            (position, self.orientation_filter.get_filtered())
+
+            // Low-pass filter the orientation
+            let alpha_rotation = 0.15;
+            let rotation = match self.previous_state.orientation.try_slerp(
+                &sample.rotation(),
+                alpha_rotation,
+                1e-6,
+            ) {
+                Some(rotation) => rotation,
+                None => sample.rotation(),
+            };
+            // self.orientation_filter.add_sample(sample.rotation());
+            (position, rotation)
         };
 
         let v_body = self.velocity_body(rotation, self.previous_state.position, position, dt);
