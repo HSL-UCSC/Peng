@@ -1,6 +1,6 @@
 use_rerun: true # Enable visualization using rerun.io
 render_depth: true # Enable rendering depth
-# file_logger: "standard"
+file_logger: "filter_test01"
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 
 rerun_blueprint: "config/hsl_blueprint.rbl"
@@ -37,8 +37,8 @@ pid_controller:
     kd: [3.8, 3.8, 5.7] # Derivative gains [x, y, z]
     ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
-    kp: [1.9, 1.9, 2.3] # Proportional gains [roll, pitch, yaw]
-    kd: [0.2, 0.2, 1.1] # Derivative gains [roll, pitch, yaw]
+    kp: [1.9, 1.9, 1.8] # Proportional gains [roll, pitch, yaw]
+    kd: [0.2, 0.2, 0.9] # Derivative gains [roll, pitch, yaw]
     ki: [0.0, 0.0, 0.0] # Integral gains [roll, pitch, yaw]
   pos_max_int: [10.0, 10.0, 10.0] # Maximum integral error for position control [x, y, z]
   att_max_int: [0.5, 0.5, 0.5] # Maximum integral error for attitude control [roll, pitch, yaw]

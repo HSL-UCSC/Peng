@@ -5,7 +5,6 @@ use crate::SimulationError;
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
 use std::f32::consts::PI;
-use std::f32::consts::PI;
 use std::time::Duration;
 use tokio::sync::watch;
 #[cfg(feature = "vicon")]
@@ -156,7 +155,7 @@ impl QuadrotorInterface for BetaflightQuad {
             let thrust_ppm = scale_control(thrust, 0.0_f32, 1.0_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
             let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
-            let rudder_ppm = scale_control(-torque.z, -15_f32, 15_f32);
+            let rudder_ppm = scale_control(-torque.z, -60_f32, 60_f32);
             if let Some(writer) = &mut self.writer {
                 writer
                     .write(CyberRCMessageType::PpmUpdate(cyberrc::PpmUpdateAll {
@@ -228,7 +227,7 @@ impl QuadrotorInterface for BetaflightQuad {
                 + (1.0 - alpha_position) * self.previous_state.position;
 
             // Uncomment this block to go back to old filter
-            // // Low-pass filter the orientation
+            // Low-pass filter the orientation
             // let alpha_rotation = 0.15;
             // let rotation = match self.previous_state.orientation.try_slerp(
             //     &sample.rotation(),
@@ -239,7 +238,7 @@ impl QuadrotorInterface for BetaflightQuad {
             //     None => sample.rotation(),
             // };
             // // self.orientation_filter.add_sample(sample.rotation());
-            // (position, rotation)
+            // (position, rotation);
 
             // Geodesic mean filter
             self.orientation_filter.add_sample(sample.rotation());
