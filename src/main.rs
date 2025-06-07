@@ -16,10 +16,11 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
-use std::time::Duration;
-use std::time::Instant;
 use sync::WorkerSync;
 use tokio::sync::Barrier;
+
+use std::time::{Duration, Instant};
+use tokio::time::{sleep_until, Instant as TokioInstant};
 
 #[tokio::main]
 /// Main function for the simulation
@@ -180,12 +181,15 @@ fn quadrotor_worker(
     mut file_logger: Option<FileLogger>,
     maze_watch: tokio::sync::watch::Receiver<Maze>,
 ) -> Result<tokio::task::JoinHandle<()>, SimulationError> {
-    let simulation_period = 1_f32 / config.simulation.simulation_frequency as f32;
+    let simulation_period = 1.0 / config.simulation.simulation_frequency as f32;
+
     let handle = tokio::spawn(async move {
         let (mut quad, mass) =
             build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
+
         let mut planner_manager =
             planners::PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
+
         let planner_config: Vec<planners::PlannerStepConfig> = config
             .planner_schedule
             .iter()
@@ -197,11 +201,13 @@ fn quadrotor_worker(
             })
             .collect();
 
-        // Configure logger
+        // Configure controller
         log::info!("Use rerun.io: {}", config.use_rerun);
         log::info!("Quadrotor: {:?} {:?}", mass, config.simulation.gravity);
+
         let pos_gains = config.pid_controller.pos_gains;
         let att_gains = config.pid_controller.att_gains;
+
         let controller = peng_quad::PIDController::new(
             [pos_gains.kp, pos_gains.kd, pos_gains.ki],
             [att_gains.kp, att_gains.kd, att_gains.ki],
@@ -214,19 +220,23 @@ fn quadrotor_worker(
         let mut controller = controller.lock().await;
 
         let mut quad_state = quad
-            .observe(0_f32)
-            .expect("error getting latest state estimate");
+            .observe(0.0)
+            .expect("error getting initial state estimate");
+
+        let mut last_loop_time = std::time::Instant::now();
 
         while !sync.kill.load(Ordering::Relaxed) {
-            sync.start_barrier.wait().await;
-            // sync.notify.notified().await;
-            let step = sync.clock.load(Ordering::Relaxed);
+            let loop_start = std::time::Instant::now();
+            let dt = loop_start.duration_since(last_loop_time).as_secs_f32();
+            last_loop_time = loop_start;
 
-            // Do simulation and control here
+            sync.start_barrier.wait().await;
+            let step = sync.clock.load(Ordering::Relaxed);
             let time = simulation_period * step as f32;
+
             let maze = maze_watch.borrow().clone();
 
-            // FIXME: why do I need to cast step?
+            // Planner
             let (desired_position, desired_velocity, desired_yaw) = planner_manager
                 .update(
                     step.try_into().unwrap(),
@@ -238,6 +248,7 @@ fn quadrotor_worker(
                 .await
                 .expect("failed to calculate inner loop control");
 
+            // Position + attitude control
             let (thrust, desired_orientation) = controller
                 .compute_position_control(
                     &desired_position,
@@ -245,7 +256,7 @@ fn quadrotor_worker(
                     desired_yaw,
                     &quad_state.position,
                     &quad_state.velocity,
-                    simulation_period,
+                    dt,
                 )
                 .await;
 
@@ -254,21 +265,25 @@ fn quadrotor_worker(
                     &desired_orientation,
                     &quad_state.orientation,
                     &quad_state.angular_velocity,
-                    simulation_period,
+                    dt,
                 )
                 .await;
-            // TODO: cleanup the return type of the control method
+
+            // Apply control
             let (thrust_out, torque_out) = match quad
                 .control(step as usize, thrust, &torque)
                 .expect("failed to execute control command")
             {
                 Some(values) => values,
-                None => (0_f32, Vector3::<f32>::zeros()),
+                None => (0.0, Vector3::zeros()),
             };
+
+            // Advance quad state
             quad_state = quad
-                .observe(simulation_period)
+                .observe(dt)
                 .expect("error getting latest state estimate");
 
+            // File logger
             if let Some(file_logger) = file_logger.as_mut() {
                 file_logger
                     .log(
@@ -290,6 +305,7 @@ fn quadrotor_worker(
                     .expect("Failed to log state with FileLogger");
             }
 
+            // Rerun logger at log frequency
             if (step as usize)
                 % (config.simulation.simulation_frequency / config.simulation.log_frequency)
                 == 0
@@ -313,9 +329,11 @@ fn quadrotor_worker(
                     )
                     .expect("Failed to log state with RerunLogger");
             }
+
             sync.end_barrier.wait().await;
         }
     });
+
     Ok(handle)
 }
 
@@ -323,33 +341,56 @@ fn clock_handle(
     config: config::SimulationConfig,
     sync: Arc<WorkerSync>,
 ) -> tokio::task::JoinHandle<()> {
+    fn busy_wait_until(target: Instant) {
+        while Instant::now() < target {
+            std::hint::spin_loop(); // Safe CPU spin (may yield to power-efficient spin)
+        }
+    }
     tokio::spawn(async move {
         let sim_duration = config.duration;
         let start_time = tokio::time::Instant::now();
-        let period = 1_f64 / (config.simulation_frequency as f64);
+        let period = 1f64 / config.simulation_frequency as f64;
         let period_duration = tokio::time::Duration::from_secs_f64(period);
-        let mut next_frame = tokio::time::Instant::now();
+        let mut next_frame = start_time;
+
+        let lag_threshold = period * 0.10;
+        let mut last_tick_time = start_time;
 
         while !sync.kill.load(Ordering::Relaxed) {
+            let now = tokio::time::Instant::now();
+
+            let elapsed = now.duration_since(last_tick_time).as_secs_f64();
+            println!(
+                "[CLOCK] Tick period: {:.3} ms (target: {:.3} ms)",
+                elapsed * 1000.0,
+                period * 1000.0
+            );
+            last_tick_time = now;
+
             sync.start_barrier.wait().await;
-            let now = tokio::time::Instant::now(); // Capture actual start time
-            if now > next_frame + tokio::time::Duration::from_millis(1) {
-                let lag = now.duration_since(next_frame);
-                log::debug!(
-                    "[WARNING] Running behind schedule! Lag: {:.3} ms",
-                    lag.as_secs_f64()
-                );
+
+            if now > next_frame {
+                let lag = now.duration_since(next_frame).as_secs_f64();
+                if lag > lag_threshold {
+                    log::warn!(
+                        "[CLOCK] Lagging by {:.3} ms (> 10% of {:.3} ms)",
+                        lag * 1000.0,
+                        period * 1000.0
+                    );
+                }
             }
 
             sync.clock.fetch_add(1, Ordering::Relaxed);
-            if config.real_time {
-                tokio::time::sleep_until(next_frame).await;
-                next_frame =
-                    start_time + (sync.clock.load(Ordering::Relaxed) as u32 * period_duration);
-            }
 
-            if start_time.elapsed().as_secs_f32() >= sim_duration {
-                sync.kill.store(true, Ordering::Relaxed);
+            if config.real_time {
+                let target_std = next_frame.into_std();
+                // let coarse_target = target_std - Duration::from_micros(100);
+                // sleep_until(TokioInstant::from_std(coarse_target)).await;
+
+                // Spin-wait until exact moment
+                busy_wait_until(target_std);
+
+                next_frame += period_duration;
             }
             sync.end_barrier.wait().await;
         }
