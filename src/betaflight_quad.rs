@@ -204,12 +204,15 @@ impl QuadrotorInterface for BetaflightQuad {
         };
 
         // Compute dt from last_sample if available
+        println!("Observing dt: {:?}", dt);
         let dt = match self.last_sample {
             Some(ref last) => (sample.timestamp.duration_since(last.timestamp))
                 .as_secs_f32()
                 .max(0.0),
             None => dt,
         };
+        println!("Sample dt: {:?}", dt);
+
         // TODO: consider a dt clamp
         // let dt = dt.clamp(1e-4, 0.1); // limit to 0.1s max for safety
 
