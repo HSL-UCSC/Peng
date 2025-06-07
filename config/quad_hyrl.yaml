@@ -68,7 +68,7 @@ planner_schedule:
       start_position: [0.0, 0.0, 0.0] # Target end position [x, y, z] (m)
       start_yaw: 0.0
       end_position: [-1.5, 0.0, 1.0] # Target end position [x, y, z] (m)
-      end_yaw: -0.942019 # Target end yaw angle (rad)
+      end_yaw: 1.1507944 # Target end yaw angle (rad)
       duration: 9.0 # Duration of the trajectory (s)
 
   # Minimum Snap Waypoint trajectory
@@ -77,7 +77,7 @@ planner_schedule:
     params:
       start_yaw: 0.0
       num_waypoints: 500
-      url: http://127.0.0.1:50051
+      url: http://172.26.45.187:50052
       start_position: [-1.5, 0.0, 1.0]
       target_position: [3.5, 0.0, 1.0]
       duration: 10.0
