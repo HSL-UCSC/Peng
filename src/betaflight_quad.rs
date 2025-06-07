@@ -250,23 +250,25 @@ impl QuadrotorInterface for BetaflightQuad {
 
             // Uncomment this block to go back to old filter
             // Low-pass filter the orientation
-            // let alpha_rotation = 0.15;
-            // let rotation = match self.previous_state.orientation.try_slerp(
-            //     &sample.rotation(),
-            //     alpha_rotation,
-            //     1e-6,
-            // ) {
-            //     Some(rotation) => rotation,
-            //     None => sample.rotation(),
-            // };
-            // // self.orientation_filter.add_sample(sample.rotation());
-            // (position, rotation);
+            let alpha_rotation = 0.15;
+            let rotation = match self.previous_state.orientation.try_slerp(
+                &sample.rotation(),
+                alpha_rotation,
+                1e-6,
+            ) {
+                Some(rotation) => rotation,
+                None => sample.rotation(),
+            };
+            // self.orientation_filter.add_sample(sample.rotation());
+            (position, rotation);
 
             // Geodesic mean filter
             self.orientation_filter.add_sample(sample.rotation());
-            (position, self.orientation_filter.get_filtered())
+            // (position, self.orientation_filter.get_filtered())
+            (position, rotation)
         };
 
+        
         let v_body = self.velocity_body(rotation, self.previous_state.position, position, dt);
         let omega_body =
             self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt, 0.1);
