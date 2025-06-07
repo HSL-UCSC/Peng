@@ -6,6 +6,7 @@ use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
 use std::f32::consts::PI;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::sync::watch;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
@@ -26,11 +27,14 @@ pub struct BetaflightQuad {
     pub config: Betaflight,
     /// Previous Thrust
     pub previous_thrust: f32,
+    /// The last vicon sample
+    #[cfg(feature = "vicon")]
+    pub last_sample: Option<ViconPacket>,
     /// Orientation filter to smooth out the orientation readings
     pub orientation_filter: OrientationFilter,
     /// Quadrotor sample mutex
     #[cfg(feature = "vicon")]
-    pub consumer: watch::Receiver<Option<vicon_sys::ViconSubject>>,
+    pub consumer: watch::Receiver<Option<ViconPacket>>,
 }
 
 impl BetaflightQuad {
@@ -40,7 +44,7 @@ impl BetaflightQuad {
     ) -> Result<Self, SimulationError> {
         #[cfg(feature = "vicon")]
         let consumer = if cfg!(feature = "vicon") {
-            let (producer, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
+            let (producer, consumer) = watch::channel(None::<ViconPacket>);
             let producer_clone = producer.clone();
             let config_clone = config.clone();
             let subject_name = config.clone().quadrotor_config.id;
@@ -50,7 +54,7 @@ impl BetaflightQuad {
             });
             consumer
         } else {
-            let (_, consumer) = watch::channel(None::<vicon_sys::ViconSubject>);
+            let (_, consumer) = watch::channel(None::<ViconPacket>);
             consumer
         };
         // Open a serial port to communicate with the quadrotor if one is specified
@@ -88,6 +92,8 @@ impl BetaflightQuad {
             simulation_config,
             config,
             previous_thrust: 0.0,
+            #[cfg(feature = "vicon")]
+            last_sample: None,
             orientation_filter: OrientationFilter::new(),
             #[cfg(feature = "vicon")]
             consumer,
@@ -180,7 +186,7 @@ impl QuadrotorInterface for BetaflightQuad {
     /// Observe the current state of the quadrotor
     /// Returns a tuple containing the position, velocity, orientation, and angular velocity of the quadrotor.
     #[cfg(feature = "vicon")]
-    fn observe(&mut self, _t: f32) -> Result<QuadrotorState, SimulationError> {
+    fn observe(&mut self, dt: f32) -> Result<QuadrotorState, SimulationError> {
         if !self
             .consumer
             .has_changed()
@@ -188,12 +194,29 @@ impl QuadrotorInterface for BetaflightQuad {
         {
             return Ok(self.state.clone());
         }
+
         self.previous_state = self.state.clone();
 
+        // Get the latest sample
         let sample = match self.consumer.borrow_and_update().clone() {
-            Some(packet) => Ok(ViconPacket(packet)),
-            None => Err(SimulationError::OtherError("No packet".to_string())),
-        }?;
+            Some(stamped) => stamped,
+            None => return Err(SimulationError::OtherError("No packet".to_string())),
+        };
+
+        // Compute dt from last_sample if available
+        let dt = match self.last_sample {
+            Some(ref last) => (sample.timestamp.duration_since(last.timestamp))
+                .as_secs_f32()
+                .max(0.0),
+            None => dt,
+        };
+        // TODO: consider a dt clamp
+        // let dt = dt.clamp(1e-4, 0.1); // limit to 0.1s max for safety
+
+        // Save current stamped sample for next iteration
+        self.last_sample = Some(sample.clone());
+
+        // let sample = ViconPacket(stamped.subject.clone());
 
         // TODO: use sample time for dt?
         // let dt = 1.0 / self.simulation_config.simulation_frequency as f32;
@@ -204,7 +227,6 @@ impl QuadrotorInterface for BetaflightQuad {
         // dbg!(dt);
         // This needs to match the sample rate of the Vicon system.
         // Ideally, this will use the time steps or real time
-        let dt = 1_f32 / 120_f32;
         let (position, rotation) = if sample.occluded() {
             // TODO: failsafe for condition where oclusion lasts longer than N frames
             println!("Warning! Vicon sample is occluded, extrapolating position and rotation");
@@ -329,18 +351,22 @@ fn extrapolate_orientation(
 }
 
 #[cfg(feature = "vicon")]
-struct ViconPacket(vicon_sys::ViconSubject);
+#[derive(Clone)]
+pub struct ViconPacket {
+    pub subject: vicon_sys::ViconSubject,
+    pub timestamp: Instant,
+}
 
 #[cfg(feature = "vicon")]
 impl ViconPacket {
     pub fn occluded(&self) -> bool {
-        self.0.occluded
+        self.subject.occluded
     }
 
     /// Returns the attitude quaternion in the NED frame
     pub fn rotation(&self) -> UnitQuaternion<f32> {
-        let rquat = nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3::x_axis(), PI);
-        let rotation = match self.0.rotation {
+        // let rquat = nalgebra::UnitQuaternion::<f32>::from_axis_angle(&Vector3::x_axis(), PI);
+        let rotation = match self.subject.rotation {
             vicon_sys::RotationType::Quaternion(q) => {
                 let mut q = q.normalize(); // Ensure unit quaternion
                 if q.w < 0.0 {
@@ -357,7 +383,7 @@ impl ViconPacket {
 
     pub fn position(&self) -> Vector3<f32> {
         // convert from Vicon NWU to NED frame
-        let position = self.0.origin;
+        let position = self.subject.origin;
         nalgebra::Vector3::<f32>::new(position[0] as f32, position[1] as f32, position[2] as f32)
     }
 }
@@ -367,21 +393,26 @@ impl ViconPacket {
 async fn feedback_loop(
     address: &str,
     id: &str,
-    tx: watch::Sender<Option<vicon_sys::ViconSubject>>,
+    tx: watch::Sender<Option<ViconPacket>>,
 ) -> Result<(), SimulationError> {
-    let mut vicon = vicon_sys::sys::ViconSystem::new("localhost")
+    let mut vicon = vicon_sys::sys::ViconSystem::new(address)
         .map_err(|e| SimulationError::OtherError(e.to_string()))?;
+
     loop {
-        // FIXME: vicon operating mode check block
         if let Ok(subjects) = vicon.read_frame_subjects(vicon_sys::OutputRotation::Quaternion) {
-            // TODO: add search for all subjects
-            if let Some(sample) = subjects.first() {
-                if sample.name == id {
-                    tx.send(Some(sample.clone()))
-                        .map_err(|e| SimulationError::OtherError(e.to_string()))?;
-                }
+            if let Some(sample) = subjects.iter().find(|s| s.name == id) {
+                let stamped = ViconPacket {
+                    subject: sample.clone(),
+                    timestamp: Instant::now(),
+                };
+
+                tx.send(Some(stamped))
+                    .map_err(|e| SimulationError::OtherError(e.to_string()))?;
             }
-        };
+        }
+
+        // optional: sleep to avoid 100% CPU
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
     }
 }
 
