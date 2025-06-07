@@ -29,20 +29,13 @@
           pre-commit
           rerun
           protobuf
-          llvmPackages.libclang
-          #pkgs.gcc
-          pkgs.gcc.cc
-          pkgs.glibc
         ]
         ++ (if stdenv.isLinux then [ pkg-config systemd ] else []);
 
         shellHook = ''
           export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
           echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
-          export LIBCLANG_PATH="${pkgs.llvmPackages.libclang.lib}/lib"
-          echo "LIBCLANG_PATH set to $LIBCLANG_PATH"
-          #export LD_LIBRARY_PATH=${pkgs.gcc.cc}/lib${"$" + "LD_LIBRARY_PATH" + ":" + "$LD_LIBRARY_PATH"}        
-          '';
+        '';
       };
 
       # Dev shell geared toward development, leaving your system's Neovim in place.
