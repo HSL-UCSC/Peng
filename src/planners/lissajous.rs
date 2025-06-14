@@ -5,6 +5,8 @@ use std::f32::consts::PI;
 
 use crate::planners::Planner;
 
+use super::TrajectoryPoint;
+
 /// Planner for Lissajous curve trajectories
 /// # Example
 /// ```
@@ -53,7 +55,7 @@ impl Planner for LissajousPlanner {
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    ) -> TrajectoryPoint {
         let t = ((time - self.start_time) / self.duration).clamp(0.0, 1.0);
         let smooth_start = if t < self.ramp_time / self.duration {
             let t_ramp = t / (self.ramp_time / self.duration);
@@ -86,7 +88,12 @@ impl Planner for LissajousPlanner {
             velocity += transition_velocity;
         }
         let yaw = self.start_yaw + (self.end_yaw - self.start_yaw) * t;
-        (position, velocity, yaw)
+        TrajectoryPoint {
+            position,
+            velocity,
+            acceleration: None,
+            yaw,
+        }
     }
 
     fn is_finished(

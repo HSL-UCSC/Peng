@@ -4,6 +4,8 @@ use nalgebra::Vector3;
 
 use crate::planners::Planner;
 
+use super::TrajectoryPoint;
+
 /// Planner for circular trajectories
 /// # Example
 /// ```
@@ -49,35 +51,60 @@ impl Planner for CirclePlanner {
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
-        let t = (time - self.start_time) / self.duration;
-        let t = t.clamp(0.0, 1.0);
-        let smooth_start = if t < self.ramp_time / self.duration {
-            let t_ramp = t / (self.ramp_time / self.duration);
+    ) -> TrajectoryPoint {
+        let t_actual = (time - self.start_time).clamp(0.0, self.duration);
+        let t_norm = t_actual / self.duration;
+
+        // Smooth ramp-in and ramp-out logic
+        let smooth_start = if t_norm < self.ramp_time / self.duration {
+            let t_ramp = t_norm / (self.ramp_time / self.duration);
             t_ramp * t_ramp * (3.0 - 2.0 * t_ramp)
         } else {
             1.0
         };
-        let velocity_ramp = if t < self.ramp_time / self.duration {
+
+        let velocity_ramp = if t_norm < self.ramp_time / self.duration {
             smooth_start
-        } else if t > 1.0 - self.ramp_time / self.duration {
-            let t_down = (1.0 - t) / (self.ramp_time / self.duration);
+        } else if t_norm > 1.0 - self.ramp_time / self.duration {
+            let t_down = (1.0 - t_norm) / (self.ramp_time / self.duration);
             t_down * t_down * (3.0 - 2.0 * t_down)
         } else {
             1.0
         };
-        let angle = self.angular_velocity * t * self.duration;
-        let circle_offset = Vector3::new(self.radius * angle.cos(), self.radius * angle.sin(), 0.0);
-        let position = self.start_position
-            + smooth_start * ((self.center + circle_offset) - self.start_position);
+
+        // Core circular motion
+        let angle = self.angular_velocity * t_actual;
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+
+        let circle_offset = Vector3::new(self.radius * cos_a, self.radius * sin_a, 0.0);
+
         let tangential_velocity = Vector3::new(
-            -self.radius * self.angular_velocity * angle.sin(),
-            self.radius * self.angular_velocity * angle.cos(),
+            -self.radius * self.angular_velocity * sin_a,
+            self.radius * self.angular_velocity * cos_a,
             0.0,
         );
+
+        let acceleration = Vector3::new(
+            -self.radius * self.angular_velocity.powi(2) * cos_a,
+            -self.radius * self.angular_velocity.powi(2) * sin_a,
+            0.0,
+        );
+
+        let position = self.start_position
+            + smooth_start * ((self.center + circle_offset) - self.start_position);
+
         let velocity = tangential_velocity * velocity_ramp;
-        let yaw = self.start_yaw + (self.end_yaw - self.start_yaw) * t;
-        (position, velocity, yaw)
+        let acceleration = acceleration * velocity_ramp;
+
+        let yaw = self.start_yaw + (self.end_yaw - self.start_yaw) * t_norm;
+
+        TrajectoryPoint {
+            position,
+            velocity,
+            acceleration: Some(acceleration),
+            yaw,
+        }
     }
 
     fn is_finished(

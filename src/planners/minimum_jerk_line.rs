@@ -4,6 +4,8 @@ use nalgebra::Vector3;
 
 use crate::planners::Planner;
 
+use super::TrajectoryPoint;
+
 /// Planner for minimum jerk trajectories along a straight line
 /// # Example
 /// ```
@@ -40,7 +42,7 @@ impl Planner for MinimumJerkLinePlanner {
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    ) -> TrajectoryPoint {
         let t = ((time - self.start_time) / self.duration).clamp(0.0, 1.0);
         let t2 = t * t;
         let t3 = t2 * t;
@@ -50,7 +52,12 @@ impl Planner for MinimumJerkLinePlanner {
         let position = self.start_position + (self.end_position - self.start_position) * s;
         let velocity = (self.end_position - self.start_position) * s_dot;
         let yaw = self.start_yaw + (self.end_yaw - self.start_yaw) * s;
-        (position, velocity, yaw)
+        TrajectoryPoint {
+            position,
+            velocity,
+            yaw,
+            acceleration: None,
+        }
     }
 
     fn is_finished(

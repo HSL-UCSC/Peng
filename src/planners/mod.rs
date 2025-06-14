@@ -1,6 +1,6 @@
 use crate::environment::Obstacle;
 use crate::quadrotor::QuadrotorState;
-use crate::{parse_f32, parse_string, parse_vector3};
+use crate::{parse_bool, parse_f32, parse_string, parse_vector3};
 use crate::{parse_uint, SimulationError};
 use async_trait::async_trait;
 use nalgebra::Vector3;
@@ -109,6 +109,13 @@ pub struct PlannerStepConfig {
     pub params: serde_yaml::Value,
 }
 
+pub struct TrajectoryPoint {
+    pub position: Vector3<f32>,
+    pub velocity: Vector3<f32>,
+    pub acceleration: Option<Vector3<f32>>, // ← Optional
+    pub yaw: f32,
+}
+
 /// Trait defining the interface for trajectory planners
 /// # Example
 /// ```
@@ -188,7 +195,7 @@ pub trait Planner {
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32);
+    ) -> TrajectoryPoint;
     /// Checks if the current trajectory is finished
     /// # Arguments
     /// * `current_position` - The current position of the quadrotor
@@ -469,6 +476,14 @@ impl PlannerManager {
                     time,
                     parse_f32(params, "duration")?,
                     parse_uint(params, "num_waypoints")?,
+                    match parse_string(params, "model_type")
+                        .unwrap_or("hybrid".to_string())
+                        .to_ascii_lowercase()
+                        .as_str()
+                    {
+                        "hybrid" => crate::hyrl::ModelType::Hybrid,
+                        _ => crate::hyrl::ModelType::Standard,
+                    },
                     Box::new(client),
                 )
                 .await
@@ -535,7 +550,7 @@ impl PlannerManager {
         quad_state: &QuadrotorState,
         obstacles: &[Obstacle],
         planner_config: &[PlannerStepConfig],
-    ) -> Result<(Vector3<f32>, Vector3<f32>, f32), SimulationError> {
+    ) -> Result<TrajectoryPoint, SimulationError> {
         // println!("{:?}", planner_config);
         // println!("Time: {:.2} s,\tStep {}", time, step);
         if let Some((idx, ps)) = planner_config
@@ -584,11 +599,10 @@ impl PlannerManager {
         }
 
         // 5) Finally call plan() on the active planner
-        let (pos, vel, yaw) = self
+        Ok(self
             .current_planner
             .plan(quad_state.position, quad_state.velocity, time)
-            .await;
-        Ok((pos, vel, yaw))
+            .await)
     }
 }
 
@@ -657,7 +671,7 @@ impl PlannerType {
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    ) -> TrajectoryPoint {
         match self {
             PlannerType::Hover(p) => p.plan(current_position, current_velocity, time).await,
             PlannerType::MinimumJerkLine(p) => {
