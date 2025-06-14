@@ -520,7 +520,7 @@ pub struct PIDController {
     pub max_integral_att: Vector3<f32>,
     pub mass: f32,
     pub gravity: f32,
-
+    pub feedforward: bool,
     #[cfg(feature = "tune")]
     pub nats_connection: async_nats::Client,
 }
@@ -555,7 +555,7 @@ impl PIDController {
     /// let max_integral_att = [1.0, 1.0, 1.0];
     /// let mass = 1.0;
     /// let gravity = 9.81;
-    /// let pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
+    /// let pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity, false);
     /// ```
     pub async fn new(
         kpid_pos: [[f32; 3]; 3],
@@ -564,6 +564,7 @@ impl PIDController {
         max_integral_att: [f32; 3],
         mass: f32,
         gravity: f32,
+        feedforward: bool,
     ) -> Arc<Mutex<Self>> {
         #[cfg(feature = "tune")]
         let nats_connection = async_nats::connect("127.0.0.1:4222")
@@ -579,6 +580,7 @@ impl PIDController {
             max_integral_att: Vector3::from(max_integral_att),
             mass,
             gravity,
+            feedforward,
             #[cfg(feature = "tune")]
             nats_connection,
         }));
@@ -708,7 +710,7 @@ impl PIDController {
     /// let max_integral_att = [1.0, 1.0, 1.0];
     /// let mass = 1.0;
     /// let gravity = 9.81;
-    /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
+    /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity, false);
     /// let desired_orientation = UnitQuaternion::<f32>::identity();
     /// let current_orientation: UnitQuaternion<f32> = UnitQuaternion::identity();
     /// let current_angular_velocity = Vector3::<f32>::zeros();
@@ -776,6 +778,7 @@ impl PIDController {
         &mut self,
         desired_position: &Vector3<f32>,
         desired_velocity: &Vector3<f32>,
+        feedforward_acceleration: Option<&Vector3<f32>>,
         desired_yaw: f32,
         current_position: &Vector3<f32>,
         current_velocity: &Vector3<f32>,
@@ -793,8 +796,15 @@ impl PIDController {
             + kpid_pos[1].component_mul(&error_velocity)
             + kpid_pos[2].component_mul(&self.integral_pos_error);
 
+        let feedforward_acceleration = feedforward_acceleration
+            .unwrap_or(&Vector3::zeros())
+            .clone();
         let gravity_compensation = Vector3::new(0.0, 0.0, self.gravity);
-        let total_acceleration = acceleration + gravity_compensation;
+        let total_acceleration = if self.feedforward {
+            acceleration + gravity_compensation + feedforward_acceleration
+        } else {
+            acceleration + gravity_compensation
+        };
         let total_acc_norm = total_acceleration.norm();
         let thrust = self.mass * total_acc_norm;
 
@@ -935,6 +945,30 @@ pub fn parse_string(value: &serde_yaml::Value, key: &str) -> Result<String, Simu
         .and_then(|v| v.as_str())
         .map(|s| s.to_owned())
         .ok_or_else(|| SimulationError::OtherError(format!("Missing or non-string key: `{}`", key)))
+}
+
+/// Helper function to parse a boolean from YAML
+/// # Arguments
+/// * `value` - YAML mapping value
+/// * `key` - key to lookup
+/// # Returns
+/// * `bool` - the parsed boolean
+/// # Errors
+/// * `SimulationError` - if the key is missing or the value is not a boolean
+/// # Example
+/// ```
+/// use peng_quad::{parse_bool, SimulationError};
+/// let value = serde_yaml::from_str("enabled: true").unwrap();
+/// let result = parse_bool(&value, "enabled").unwrap();
+/// assert_eq!(result, true);
+/// ```
+pub fn parse_bool(value: &serde_yaml::Value, key: &str) -> Result<bool, SimulationError> {
+    match value.get(key) {
+        Some(v) => v.as_bool().ok_or_else(|| {
+            SimulationError::OtherError(format!("Key `{}` is not a valid boolean", key))
+        }),
+        None => Ok(false),
+    }
 }
 
 /// log joystick positions
