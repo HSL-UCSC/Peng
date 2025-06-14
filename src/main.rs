@@ -215,6 +215,7 @@ fn quadrotor_worker(
             config.pid_controller.att_max_int,
             mass,
             config.simulation.gravity,
+            config.pid_controller.feedforward.unwrap_or_else(|| false),
         )
         .await;
         let mut controller = controller.lock().await;
@@ -237,7 +238,7 @@ fn quadrotor_worker(
             let maze = maze_watch.borrow().clone();
 
             // Planner
-            let (desired_position, desired_velocity, desired_yaw) = planner_manager
+            let trajectory_point = planner_manager
                 .update(
                     step.try_into().unwrap(),
                     time,
@@ -248,11 +249,19 @@ fn quadrotor_worker(
                 .await
                 .expect("failed to calculate inner loop control");
 
+            let (desired_position, desired_velocity, desired_acceleration, desired_yaw) = (
+                trajectory_point.position,
+                trajectory_point.velocity,
+                trajectory_point.acceleration,
+                trajectory_point.yaw,
+            );
+
             // Position + attitude control
             let (thrust, desired_orientation) = controller
                 .compute_position_control(
                     &desired_position,
                     &desired_velocity,
+                    desired_acceleration.as_ref(),
                     desired_yaw,
                     &quad_state.position,
                     &quad_state.velocity,
@@ -358,17 +367,9 @@ fn clock_handle(
 
         while !sync.kill.load(Ordering::Relaxed) {
             let now = tokio::time::Instant::now();
-
             let elapsed = now.duration_since(last_tick_time).as_secs_f64();
-            // println!(
-            //     "[CLOCK] Tick period: {:.3} ms (target: {:.3} ms)",
-            //     elapsed * 1000.0,
-            //     period * 1000.0
-            // );
             last_tick_time = now;
-
             sync.start_barrier.wait().await;
-
             if now > next_frame {
                 let lag = now.duration_since(next_frame).as_secs_f64();
                 if lag > lag_threshold {

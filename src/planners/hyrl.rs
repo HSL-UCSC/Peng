@@ -1,3 +1,4 @@
+use super::TrajectoryPoint;
 use crate::SimulationError;
 use async_trait::async_trait;
 use nalgebra::Vector3;
@@ -17,10 +18,11 @@ use crate::planners::{MinimumSnapWaypointPlanner, Planner};
 pub trait HyRLObstacleAvoidanceService: Send + Sync {
     async fn request_trajectory(
         &mut self,
-        start: Vector3<f32>,
-        target: Vector3<f32>,
+        start_position: Vector3<f32>,
+        target_position: Vector3<f32>,
         duration_s: f32,
         num_waypoints: u32,
+        model_type: ModelType,
     ) -> Result<Vec<DroneState>, SimulationError>;
 }
 
@@ -49,6 +51,7 @@ impl HyRLObstacleAvoidanceService for HyRLClient {
         target_position: Vector3<f32>,
         duration_s: f32,
         num_waypoints: u32,
+        model_type: ModelType,
     ) -> Result<Vec<DroneState>, SimulationError> {
         println!("Requesting trajectory from HyRL server...");
         let request = TrajectoryRequest {
@@ -65,7 +68,7 @@ impl HyRLObstacleAvoidanceService for HyRLClient {
             num_waypoints: num_waypoints.try_into().unwrap(),
             duration_s: duration_s as u32,
             sampling_time: 0.005,
-            model_type: ModelType::Hybrid.into(),
+            model_type: model_type.into(),
         };
 
         // perform the unary RPC
@@ -121,13 +124,20 @@ impl HyRLPlanner {
         start_time: f32,
         duration: f32,
         num_waypoints: u32,
+        model_type: ModelType,
         mut client: Box<dyn HyRLObstacleAvoidanceService>,
     ) -> Result<Self, SimulationError> {
         // The drone at 0 in Peng space is the agent at 1.5 in the models coordinate system.
         // So for a nominal start x ~ -1.5, we offset by 1.5 to zero out x
         let hyrl_start = start_position + Vector3::new(1.5, 0.0, 0.0);
         let drone_states = client
-            .request_trajectory(hyrl_start, target_position, duration, num_waypoints)
+            .request_trajectory(
+                hyrl_start,
+                target_position,
+                duration,
+                num_waypoints,
+                model_type,
+            )
             .await?;
         println!("Drone States: {:?}", drone_states);
         if drone_states.len() < 2 {
@@ -202,7 +212,7 @@ impl Planner for HyRLPlanner {
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    ) -> TrajectoryPoint {
         self.minimum_snap_planner
             .plan(current_position, current_velocity, time)
             .await
@@ -255,6 +265,7 @@ mod tests {
             _target: Vector3<f32>,
             _duration_s: f32,
             _num_waypoints: u32,
+            _model_type: ModelType,
         ) -> Result<Vec<DroneState>, SimulationError> {
             Ok(self.responses.clone())
         }
@@ -299,6 +310,7 @@ mod tests {
             start_time,
             duration,
             num_waypoints,
+            ModelType::Hybrid,
             Box::new(mock),
         )
         .await?;

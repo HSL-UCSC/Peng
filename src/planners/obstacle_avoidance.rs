@@ -5,6 +5,8 @@ use nalgebra::Vector3;
 
 use crate::planners::Planner;
 
+use super::TrajectoryPoint;
+
 /// Obstacle avoidance planner that uses a potential field approach to avoid obstacles
 ///
 /// The planner calculates a repulsive force for each obstacle and an attractive force towards the goal
@@ -67,7 +69,7 @@ impl Planner for ObstacleAvoidancePlanner {
         current_position: Vector3<f32>,
         current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    ) -> TrajectoryPoint {
         let t = ((time - self.start_time) / self.duration).clamp(0.0, 1.0);
         let distance_to_target = (self.target_position - current_position).norm();
         let f_att = self.k_att
@@ -92,7 +94,12 @@ impl Planner for ObstacleAvoidancePlanner {
         let desired_velocity = f_total.normalize() * self.max_speed.min(f_total.norm());
         let desired_position = current_position + desired_velocity * self.duration * (1.0 - t);
         let desired_yaw = self.start_yaw + (self.end_yaw - self.start_yaw) * t;
-        (desired_position, desired_velocity, desired_yaw)
+        TrajectoryPoint {
+            position: desired_position,
+            velocity: desired_velocity,
+            yaw: desired_yaw,
+            acceleration: None,
+        }
     }
 
     fn is_finished(
