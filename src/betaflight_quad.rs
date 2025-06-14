@@ -161,7 +161,7 @@ impl QuadrotorInterface for BetaflightQuad {
             let thrust_ppm = scale_control(thrust, 0.0_f32, 1.0_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
             let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
-            let rudder_ppm = scale_control(-torque.z, -60_f32, 60_f32);
+            let rudder_ppm = scale_control(-torque.z, -5_f32, 5_f32);
             if let Some(writer) = &mut self.writer {
                 writer
                     .write(CyberRCMessageType::PpmUpdate(cyberrc::PpmUpdateAll {
@@ -204,12 +204,15 @@ impl QuadrotorInterface for BetaflightQuad {
         };
 
         // Compute dt from last_sample if available
+        println!("Observing dt: {:?}", dt);
         let dt = match self.last_sample {
             Some(ref last) => (sample.timestamp.duration_since(last.timestamp))
                 .as_secs_f32()
                 .max(0.0),
             None => dt,
         };
+        println!("Sample dt: {:?}", dt);
+
         // TODO: consider a dt clamp
         // let dt = dt.clamp(1e-4, 0.1); // limit to 0.1s max for safety
 
@@ -250,23 +253,25 @@ impl QuadrotorInterface for BetaflightQuad {
 
             // Uncomment this block to go back to old filter
             // Low-pass filter the orientation
-            // let alpha_rotation = 0.15;
-            // let rotation = match self.previous_state.orientation.try_slerp(
-            //     &sample.rotation(),
-            //     alpha_rotation,
-            //     1e-6,
-            // ) {
-            //     Some(rotation) => rotation,
-            //     None => sample.rotation(),
-            // };
-            // // self.orientation_filter.add_sample(sample.rotation());
-            // (position, rotation);
+            let alpha_rotation = 0.15;
+            let rotation = match self.previous_state.orientation.try_slerp(
+                &sample.rotation(),
+                alpha_rotation,
+                1e-6,
+            ) {
+                Some(rotation) => rotation,
+                None => sample.rotation(),
+            };
+            // self.orientation_filter.add_sample(sample.rotation());
+            (position, rotation);
 
             // Geodesic mean filter
             self.orientation_filter.add_sample(sample.rotation());
-            (position, self.orientation_filter.get_filtered())
+            // (position, self.orientation_filter.get_filtered())
+            (position, rotation)
         };
 
+        
         let v_body = self.velocity_body(rotation, self.previous_state.position, position, dt);
         let omega_body =
             self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt, 0.1);

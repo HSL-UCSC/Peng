@@ -360,11 +360,11 @@ fn clock_handle(
             let now = tokio::time::Instant::now();
 
             let elapsed = now.duration_since(last_tick_time).as_secs_f64();
-            println!(
-                "[CLOCK] Tick period: {:.3} ms (target: {:.3} ms)",
-                elapsed * 1000.0,
-                period * 1000.0
-            );
+            // println!(
+            //     "[CLOCK] Tick period: {:.3} ms (target: {:.3} ms)",
+            //     elapsed * 1000.0,
+            //     period * 1000.0
+            // );
             last_tick_time = now;
 
             sync.start_barrier.wait().await;
