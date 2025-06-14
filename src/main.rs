@@ -367,12 +367,9 @@ fn clock_handle(
 
         while !sync.kill.load(Ordering::Relaxed) {
             let now = tokio::time::Instant::now();
-
             let elapsed = now.duration_since(last_tick_time).as_secs_f64();
             last_tick_time = now;
-
             sync.start_barrier.wait().await;
-
             if now > next_frame {
                 let lag = now.duration_since(next_frame).as_secs_f64();
                 if lag > lag_threshold {

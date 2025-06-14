@@ -1,13 +1,13 @@
 use_rerun: true # Enable visualization using rerun.io
 render_depth: true # Enable rendering depth
-file_logger: "filter_test01"
+# file_logger: "filter_test01"
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 
 rerun_blueprint: "config/hsl_blueprint.rbl"
 
 simulation:
   control_frequency: 120 # Frequency of control loop execution (Hz)
-  simulation_frequency: 480 # Frequency of physics simulation updates (Hz)
+  simulation_frequency: 240 # Frequency of physics simulation updates (Hz)
   log_frequency: 20 # Frequency of data logging (Hz)
   duration: 125.0 # Total duration of the simulation (seconds)
   gravity: 9.81 # Gravitational acceleration (m/s^2)
@@ -33,12 +33,12 @@ quadrotor:
 
 pid_controller:
   pos_gains: # PID gains for position control
-    kp: [5.8, 5.8, 14.0] # Proportional gains [x, y, z]
-    kd: [3.8, 3.8, 5.7] # Derivative gains [x, y, z]
+    kp: [10.7, 10.7, 14.0] # Proportional gains [x, y, z]
+    kd: [3.5, 3.5, 3.3] # Derivative gains [x, y, z]
     ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
-    kp: [1.9, 1.9, 1.8] # Proportional gains [roll, pitch, yaw]
-    kd: [0.2, 0.2, 0.9] # Derivative gains [roll, pitch, yaw]
+    kp: [7.6, 7.6, 5.1] # Proportional gains [roll, pitch, yaw]
+    kd: [0.4, 0.4, 0.5] # Derivative gains [roll, pitch, yaw]
     ki: [0.0, 0.0, 0.0] # Integral gains [roll, pitch, yaw]
   pos_max_int: [10.0, 10.0, 10.0] # Maximum integral error for position control [x, y, z]
   att_max_int: [0.5, 0.5, 0.5] # Maximum integral error for attitude control [roll, pitch, yaw]
@@ -78,10 +78,10 @@ planner_schedule:
       start_yaw: 0.0
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       end_yaw: 0 # Target end yaw angle (rad)
-      duration: 3.0 # Duration of the trajectory (s)
+      duration: 0.5 # Duration of the trajectory (s)
 
   # Hover
-  - time: 6.0 # Simulation step in ms to start this planner
+  - time: 3.5 # Simulation step in ms to start this planner
     planner_type: Hover
     params:
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
@@ -98,7 +98,7 @@ planner_schedule:
   #     duration: 10.0 # Duration of the trajectory (s)
 
   # # Minimum Snap Waypoint trajectory
-  # - time: 19.0
+  # - time: 15.0
   #   planner_type: HyRL
   #   params:
   #     start_yaw: 0.0
@@ -113,10 +113,10 @@ planner_schedule:
   #   planner_type: Circle
   #   params:
   #     center: [0.0, 0.0, 0.5] # Center of the circle [x, y, z] (m)
-  #     radius: 0.5 # Radius of the circle (m)
-  #     angular_velocity: 1.0 # Angular velocity (rad/s)
-  #     duration: 20.0 # Duration of the trajectory (s)
-  #     ramp_time: 2.0 # Time for smooth transition (s)
+  #     radius: 1.0 # Radius of the circle (m)
+  #     angular_velocity: 0.35 # Angular velocity (rad/s)
+  #     duration: 60.0 # Duration of the trajectory (s)
+  #     ramp_time: 5 # Time for smooth transition (s)
 
   # Landing trajectory
   - time: 120.0
