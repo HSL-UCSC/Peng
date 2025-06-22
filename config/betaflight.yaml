@@ -33,8 +33,8 @@ quadrotor:
 
 pid_controller:
   pos_gains: # PID gains for position control
-    kp: [10.7, 10.7, 14.0] # Proportional gains [x, y, z]
-    kd: [3.5, 3.5, 3.3] # Derivative gains [x, y, z]
+    kp: [9.5, 9.5, 14.0] # Proportional gains [x, y, z]
+    kd: [1.4, 1.4, 3.3] # Derivative gains [x, y, z]
     ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
     kp: [7.6, 7.6, 5.1] # Proportional gains [roll, pitch, yaw]
@@ -88,14 +88,14 @@ planner_schedule:
       target_yaw: 0.0 # Target end yaw angle (rad)
 
   # # Minimum Jerk Line trajectory
-  # - time: 9.0 # Simulation step in ms to start this planner
+  # - time: 10.0 # Simulation step in ms to start this planner
   #   planner_type: MinimumJerkLine
   #   params:
   #     start_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
   #     start_yaw: 0.0
-  #     end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
+  #     end_position: [0.0, 0.5, 0.5] # Target end position [x, y, z] (m)
   #     end_yaw: 0 # Target end yaw angle (rad)
-  #     duration: 10.0 # Duration of the trajectory (s)
+  #     duration: 0.0 # Duration of the trajectory (s)
 
   # # Minimum Snap Waypoint trajectory
   # - time: 15.0
@@ -108,15 +108,15 @@ planner_schedule:
   #     target_position: [3.5, 0.0, 0.5]
   #     duration: 30.0
 
-  # # Circular trajectory
-  # - time: 30.0
-  #   planner_type: Circle
-  #   params:
-  #     center: [0.0, 0.0, 0.5] # Center of the circle [x, y, z] (m)
-  #     radius: 1.0 # Radius of the circle (m)
-  #     angular_velocity: 0.35 # Angular velocity (rad/s)
-  #     duration: 60.0 # Duration of the trajectory (s)
-  #     ramp_time: 5 # Time for smooth transition (s)
+  # Circular trajectory
+  - time: 10.0
+    planner_type: Circle
+    params:
+      center: [0.0, 0.0, 0.5] # Center of the circle [x, y, z] (m)
+      radius: 1.0 # Radius of the circle (m)
+      angular_velocity: 0.8 # Angular velocity (rad/s)
+      duration: 60.0 # Duration of the trajectory (s)
+      ramp_time: 5 # Time for smooth transition (s)
 
   # Landing trajectory
   - time: 120.0
