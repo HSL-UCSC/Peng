@@ -4,6 +4,8 @@ use nalgebra::Vector3;
 
 use crate::planners::Planner;
 
+use super::TrajectoryPoint;
+
 /// Planner for landing maneuvers
 /// # Example
 /// ```
@@ -34,12 +36,17 @@ impl Planner for LandingPlanner {
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    ) -> TrajectoryPoint {
         let t = ((time - self.start_time) / self.duration).clamp(0.0, 1.0);
         let target_z = self.start_position.z * (1.0 - t);
         let target_position = Vector3::new(self.start_position.x, self.start_position.y, target_z);
         let target_velocity = Vector3::new(0.0, 0.0, -self.start_position.z / self.duration);
-        (target_position, target_velocity, self.start_yaw)
+        TrajectoryPoint {
+            position: target_position,
+            velocity: target_velocity,
+            yaw: self.start_yaw,
+            acceleration: None,
+        }
     }
 
     fn is_finished(

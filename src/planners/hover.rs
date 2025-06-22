@@ -4,6 +4,8 @@ use nalgebra::Vector3;
 
 use crate::planners::Planner;
 
+use super::TrajectoryPoint;
+
 /// Planner for hovering at a fixed position
 /// # Example
 /// ```
@@ -28,8 +30,13 @@ impl Planner for HoverPlanner {
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         _time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
-        (self.target_position, Vector3::zeros(), self.target_yaw)
+    ) -> TrajectoryPoint {
+        TrajectoryPoint {
+            position: self.target_position,
+            velocity: Vector3::zeros(),
+            yaw: self.target_yaw,
+            acceleration: None,
+        }
     }
 
     fn is_finished(

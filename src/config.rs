@@ -273,6 +273,8 @@ pub struct PIDControllerConfig {
     pub pos_max_int: [f32; 3],
     /// Maximum integral error for attitude control
     pub att_max_int: [f32; 3],
+    /// Enable feedforward
+    pub feedforward: Option<bool>,
 }
 
 #[derive(Clone, Copy, serde::Deserialize)]
