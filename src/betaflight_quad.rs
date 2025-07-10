@@ -158,7 +158,7 @@ impl QuadrotorInterface for BetaflightQuad {
             let _max_thrust = self.max_thrust();
             let _max_torque = self.max_torque();
             self.previous_thrust = thrust;
-            let thrust_ppm = scale_control(thrust, 0.0_f32, 1.0_f32);
+            let thrust_ppm = scale_control(thrust, 0.0_f32, 0.9_f32);
             let aileron_ppm = scale_control(torque.x, -5_f32, 5_f32);
             let elevator_ppm = scale_control(torque.y, -5_f32, 5_f32);
             let rudder_ppm = scale_control(-torque.z, -5_f32, 5_f32);
@@ -204,14 +204,14 @@ impl QuadrotorInterface for BetaflightQuad {
         };
 
         // Compute dt from last_sample if available
-        println!("Observing dt: {:?}", dt);
+        // println!("Observing dt: {:?}", dt);
         let dt = match self.last_sample {
             Some(ref last) => (sample.timestamp.duration_since(last.timestamp))
                 .as_secs_f32()
                 .max(0.0),
             None => dt,
         };
-        println!("Sample dt: {:?}", dt);
+        // println!("Sample dt: {:?}", dt);
 
         // TODO: consider a dt clamp
         // let dt = dt.clamp(1e-4, 0.1); // limit to 0.1s max for safety

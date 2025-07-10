@@ -160,8 +160,7 @@ impl HyRLPlanner {
                 let b = window[1];
                 let delta_x = b.x - a.x;
                 let delta_y = b.y - a.y;
-                // delta_y.atan2(delta_x)
-                0.0
+                delta_y.atan2(delta_x)
             })
             // .map(|window| 0.0)
             .collect();
