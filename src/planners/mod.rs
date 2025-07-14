@@ -522,9 +522,6 @@ impl PlannerManager {
             #[cfg(feature = "hyrl")]
             "HyRL" => {
                 let url = parse_string(params, "url")?;
-                let client = hyrl::HyRLClient::new(url)?;
-                println!("Creating HyRL Planner---------");
-                // TODO: fetch from eager planner
                 let key: u32 = step
                     .step
                     .map(|s| s as u32)

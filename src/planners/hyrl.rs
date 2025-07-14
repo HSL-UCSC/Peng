@@ -161,25 +161,25 @@ impl HyRLPlanner {
                 let b = window[1];
                 let delta_x = b.x - a.x;
                 let delta_y = b.y - a.y;
-                // delta_y.atan2(delta_x)
-                0.0
+                delta_y.atan2(delta_x)
+                // 0.0
             })
             // .map(|window| 0.0)
             .collect();
-        // let target_yaw = 0.0;
-        // let blend_window = (num_waypoints as f32 * 0.5) as usize; // number of points to smooth toward 0.0
-        // let len = yaws.len();
+        let target_yaw = 0.0;
+        let blend_window = (num_waypoints as f32 * 0.5) as usize; // number of points to smooth toward 0.0
+        let len = yaws.len();
 
-        // if len >= blend_window as usize {
-        //     for i in 0..blend_window {
-        //         let alpha = (i as f32 + 1.0) / (blend_window as f32);
-        //         yaws[len - blend_window + i] =
-        //             (1.0 - alpha) * yaws[len - blend_window + i] + alpha * target_yaw;
-        //     }
-        // } else if !yaws.is_empty() {
-        //     // Short path, just set final yaw directly
-        //     yaws[len - 1] = target_yaw;
-        // }
+        if len >= blend_window as usize {
+            for i in 0..blend_window {
+                let alpha = (i as f32 + 1.0) / (blend_window as f32);
+                yaws[len - blend_window + i] =
+                    (1.0 - alpha) * yaws[len - blend_window + i] + alpha * target_yaw;
+            }
+        } else if !yaws.is_empty() {
+            // Short path, just set final yaw directly
+            yaws[len - 1] = target_yaw;
+        }
 
         yaws.push_front(*yaws.front().unwrap());
         println!("yaws: {:?}", yaws);
