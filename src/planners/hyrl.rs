@@ -69,6 +69,7 @@ impl HyRLObstacleAvoidanceService for HyRLClient {
             duration_s: duration_s as u32,
             sampling_time: 0.005,
             model_type: model_type.into(),
+            noise: true,
         };
 
         // perform the unary RPC
