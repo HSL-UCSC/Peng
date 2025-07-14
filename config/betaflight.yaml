@@ -33,8 +33,8 @@ quadrotor:
 
 pid_controller:
   pos_gains: # PID gains for position control
-    kp: [9.5, 9.5, 14.0] # Proportional gains [x, y, z]
-    kd: [1.4, 1.4, 3.3] # Derivative gains [x, y, z]
+    kp: [10.7, 10.7, 14.0] # Proportional gains [x, y, z]
+    kd: [3.5, 3.5, 3.3] # Derivative gains [x, y, z]
     ki: [0.0, 0.0, 0.0] # Integral gains [x, y, z]
   att_gains: # PID gains for attitude control
     kp: [7.6, 7.6, 4.1] # Proportional gains [roll, pitch, yaw]
@@ -76,17 +76,19 @@ planner_schedule:
     params:
       start_position: [0.0, 0.0, 0.0] # Target end position [x, y, z] (m)
       start_yaw: 0.0
-      end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
       end_yaw: 0 # Target end yaw angle (rad)
       duration: 0.5 # Duration of the trajectory (s)
 
-  # Hover
-  - time: 3.5 # Simulation step in ms to start this planner
-    planner_type: Hover
-    params:
-      end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
-      target_yaw: 0.0 # Target end yaw angle (rad)
+############################## HYRL #########################################
+  # # Hover
+  # - time: 3.5 # Simulation step in ms to start this planner
+  #   planner_type: Hover
+  #   params:
+  #     end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+  #     target_yaw: 0.0 # Target end yaw angle (rad)
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   # Minimum Jerk Line trajectory
   - time: 10.0 # Simulation step in ms to start this planner
@@ -98,36 +100,56 @@ planner_schedule:
       end_yaw: 0 # Target end yaw angle (rad)
       duration: 8.0 # Duration of the trajectory (s)
 =======
+=======
+>>>>>>> 7321ebac (verified hover for demo)
   # # Minimum Jerk Line trajectory
   # - time: 10.0 # Simulation step in ms to start this planner
   #   planner_type: MinimumJerkLine
   #   params:
   #     start_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
   #     start_yaw: 0.0
+<<<<<<< HEAD
   #     end_position: [0.0, 0.5, 0.5] # Target end position [x, y, z] (m)
   #     end_yaw: 0 # Target end yaw angle (rad)
   #     duration: 0.0 # Duration of the trajectory (s)
 >>>>>>> 28c0dfdf (decreased porportional and derivative positional gains for trajectory driven flight)
+=======
+  #     end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
+  #     end_yaw: 0 # Target end yaw angle (rad)
+  #     duration: 8.0 # Duration of the trajectory (s)
+>>>>>>> 7321ebac (verified hover for demo)
 
-  # Minimum Snap Waypoint trajectory
-  - time: 18.0
-    planner_type: HyRL
-    params:
-      start_yaw: 0.0
-      num_waypoints: 200 
-      url: http://172.26.45.187:50052
-      start_position: [-1.5, 0.0, 0.5]
-      target_position: [1.5, 0.0, 0.5]
-      model_type: Standard
-      duration: 10.0
+  # # Hover
+  # - time: 18.0 # Simulation step in ms to start this planner
+  #   planner_type: Hover
+  #   params:
+  #     end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
+  #     target_yaw: 0 # Target end yaw angle (rad)
+
+  # # Minimum Snap Waypoint trajectory
+  # - time: 20.0
+  #   planner_type: HyRL
+  #   params:
+  #     start_yaw: 0.0
+  #     num_waypoints: 200 
+  #     url: http://172.26.45.187:50052
+  #     start_position: [-1.5, 0.0, 0.5]
+  #     target_position: [1.5, 0.0, 0.5]
+  #     model_type: standard
+  #     # noise: true
+  #     duration: 10.0
+############################## HYRL #########################################
+
+############################## DEMO #########################################
 
   # Hover
-  - time: 28.0 # Simulation step in ms to start this planner
+  - time: 5.0 # Simulation step in ms to start this planner
     planner_type: Hover
     params:
-      end_position: [1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
+      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
       target_yaw: 0 # Target end yaw angle (rad)
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   # # Circular trajectory
   # - time: 10.0
@@ -139,19 +161,31 @@ planner_schedule:
   #     duration: 60.0 # Duration of the trajectory (s)
   #     ramp_time: 5 # Time for smooth transition (s)
 =======
+=======
+>>>>>>> 7321ebac (verified hover for demo)
   # Circular trajectory
   - time: 10.0
     planner_type: Circle
     params:
+<<<<<<< HEAD
       center: [0.0, 0.0, 0.5] # Center of the circle [x, y, z] (m)
+=======
+      center: [0.0, 0.0, 1.0] # Center of the circle [x, y, z] (m)
+>>>>>>> 7321ebac (verified hover for demo)
       radius: 1.0 # Radius of the circle (m)
       angular_velocity: 0.8 # Angular velocity (rad/s)
       duration: 60.0 # Duration of the trajectory (s)
       ramp_time: 5 # Time for smooth transition (s)
+<<<<<<< HEAD
 >>>>>>> 28c0dfdf (decreased porportional and derivative positional gains for trajectory driven flight)
+=======
+
+############################## DEMO #########################################
+
+>>>>>>> 7321ebac (verified hover for demo)
 
   # Landing trajectory
-  - time: 35.0
+  - time: 70.0
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)
