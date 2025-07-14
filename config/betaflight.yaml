@@ -117,7 +117,10 @@ planner_schedule:
   #     end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
   #     end_yaw: 0 # Target end yaw angle (rad)
   #     duration: 8.0 # Duration of the trajectory (s)
+<<<<<<< HEAD
 >>>>>>> 7321ebac (verified hover for demo)
+=======
+>>>>>>> 7321ebac4c29bdd950f14be549697915496c5f8b
 
   # # Hover
   # - time: 18.0 # Simulation step in ms to start this planner
@@ -139,6 +142,7 @@ planner_schedule:
   #     # noise: true
   #     duration: 10.0
 ############################## HYRL #########################################
+<<<<<<< HEAD
 
 ############################## DEMO #########################################
 
@@ -183,6 +187,30 @@ planner_schedule:
 ############################## DEMO #########################################
 
 >>>>>>> 7321ebac (verified hover for demo)
+=======
+
+############################## DEMO #########################################
+
+  # Hover
+  - time: 5.0 # Simulation step in ms to start this planner
+    planner_type: Hover
+    params:
+      end_position: [0.0, 0.0, 1.0] # Target end position [x, y, z] (m)
+      target_yaw: 0 # Target end yaw angle (rad)
+
+  # Circular trajectory
+  - time: 10.0
+    planner_type: Circle
+    params:
+      center: [0.0, 0.0, 1.0] # Center of the circle [x, y, z] (m)
+      radius: 1.0 # Radius of the circle (m)
+      angular_velocity: 0.8 # Angular velocity (rad/s)
+      duration: 60.0 # Duration of the trajectory (s)
+      ramp_time: 5 # Time for smooth transition (s)
+
+############################## DEMO #########################################
+
+>>>>>>> 7321ebac4c29bdd950f14be549697915496c5f8b
 
   # Landing trajectory
   - time: 70.0
