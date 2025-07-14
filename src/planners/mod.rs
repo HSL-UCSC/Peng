@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::environment::Obstacle;
 use crate::quadrotor::QuadrotorState;
 use crate::{parse_bool, parse_f32, parse_string, parse_vector3};
@@ -248,6 +250,7 @@ pub struct PlannerManager {
     /// The current planner
     pub current_planner: PlannerType,
     pub current_planner_idx: i32,
+    pub eager_planners: HashMap<u32, HyRLPlanner>,
 }
 /// Implementation of the PlannerManager
 impl PlannerManager {
@@ -265,18 +268,70 @@ impl PlannerManager {
     /// let initial_yaw = 0.0;
     /// let planner_manager = PlannerManager::new(initial_position, initial_yaw);
     /// ```
-    pub fn new(initial_position: Vector3<f32>, initial_yaw: f32) -> Self {
+    pub async fn new(
+        planner_config: &Vec<PlannerStepConfig>,
+        initial_position: Vector3<f32>,
+        initial_yaw: f32,
+    ) -> Result<Self, SimulationError> {
         let hover_planner = HoverPlanner {
             target_position: initial_position,
             target_yaw: initial_yaw,
         };
 
+        let mut eager_planners: HashMap<u32, HyRLPlanner> = HashMap::new();
+
+        // TODO: use the planner index instead of the time/step as the key
+        for (i, config) in planner_config.iter().enumerate() {
+            let params = config.params.clone();
+            match config.planner_type.as_str() {
+                "HyRL" => {
+                    let url = parse_string(&params, "url").expect("HyRL URL not provided");
+                    let client = hyrl::HyRLClient::new(url).expect("Failed to create HyRL client");
+                    let key: u32 = config
+                        .step
+                        .map(|s| s as u32)
+                        .or_else(|| config.time.map(|t| t.round() as u32)) // or `t as u32` if truncation is OK
+                        .ok_or_else(|| {
+                            SimulationError::OtherError(
+                                "No step or time provided for this planner".to_string(),
+                            )
+                        })?;
+                    let planner = HyRLPlanner::new(
+                        parse_vector3(&params, "start_position")?,
+                        parse_f32(&params, "start_yaw")?,
+                        parse_vector3(&params, "target_position")?,
+                        config.time.expect("HyRL time required in config"),
+                        parse_f32(&params, "duration")?,
+                        parse_uint(&params, "num_waypoints")?,
+                        match parse_string(&params, "model_type")
+                            .unwrap_or("hybrid".to_string())
+                            .to_ascii_lowercase()
+                            .as_str()
+                        {
+                            "hybrid" => crate::hyrl::ModelType::Hybrid,
+                            _ => crate::hyrl::ModelType::Standard,
+                        },
+                        Box::new(client),
+                    )
+                    .await?;
+                    eager_planners.insert(key, planner);
+                }
+                _ => {
+                    log::warn!(
+                        "Planner type '{}' is not supported in eager planners, skipping.",
+                        config.planner_type
+                    );
+                }
+            }
+        }
+
         #[cfg(not(feature = "hyrl"))]
         let channel = None;
-        Self {
+        Ok(Self {
             current_planner: PlannerType::Hover(hover_planner),
             current_planner_idx: -1,
-        }
+            eager_planners,
+        })
     }
 
     /// Sets a new planner
@@ -357,7 +412,7 @@ impl PlannerManager {
     /// }
     /// ```
     pub async fn create_planner(
-        &self,
+        &mut self,
         step: &PlannerStepConfig,
         quad_state: &QuadrotorState,
         time: f32,
@@ -469,25 +524,22 @@ impl PlannerManager {
                 let url = parse_string(params, "url")?;
                 let client = hyrl::HyRLClient::new(url)?;
                 println!("Creating HyRL Planner---------");
-                HyRLPlanner::new(
-                    quad_state.position,
-                    parse_f32(params, "start_yaw")?,
-                    parse_vector3(params, "target_position")?,
-                    time,
-                    parse_f32(params, "duration")?,
-                    parse_uint(params, "num_waypoints")?,
-                    match parse_string(params, "model_type")
-                        .unwrap_or("hybrid".to_string())
-                        .to_ascii_lowercase()
-                        .as_str()
-                    {
-                        "hybrid" => crate::hyrl::ModelType::Hybrid,
-                        _ => crate::hyrl::ModelType::Standard,
-                    },
-                    Box::new(client),
-                )
-                .await
-                .map(PlannerType::HyRL)
+                // TODO: fetch from eager planner
+                let key: u32 = step
+                    .step
+                    .map(|s| s as u32)
+                    .or_else(|| step.time.map(|t| t.round() as u32)) // or `t as u32` if truncation is OK
+                    .ok_or_else(|| {
+                        SimulationError::OtherError(
+                            "No step or time provided for this planner".to_string(),
+                        )
+                    })?;
+                let planner = PlannerType::HyRL(
+                    self.eager_planners
+                        .remove(&key)
+                        .expect("HyRL planner not found"),
+                );
+                Ok(planner)
             }
             "Landing" => Ok(PlannerType::Landing(LandingPlanner {
                 start_position: quad_state.position,

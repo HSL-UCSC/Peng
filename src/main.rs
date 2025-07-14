@@ -187,9 +187,6 @@ fn quadrotor_worker(
         let (mut quad, mass) =
             build_quadrotor(&config, &quadrotor_config).expect("failed to build quadrotor");
 
-        let mut planner_manager =
-            planners::PlannerManager::new(quad.observe(0.0).unwrap().position, 0.0);
-
         let planner_config: Vec<planners::PlannerStepConfig> = config
             .planner_schedule
             .iter()
@@ -200,6 +197,14 @@ fn quadrotor_worker(
                 params: step.params.clone(),
             })
             .collect();
+
+        let mut planner_manager = planners::PlannerManager::new(
+            &planner_config,
+            quad.observe(0.0).unwrap().position,
+            0.0,
+        )
+        .await
+        .expect("Failed to create planner manager");
 
         // Configure controller
         log::info!("Use rerun.io: {}", config.use_rerun);
