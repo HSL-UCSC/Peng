@@ -3,6 +3,10 @@
 
   inputs = {
     naersk.url = "github:nix-community/naersk/master";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
     oaapis = {
@@ -11,21 +15,32 @@
     };
   };
 
-  outputs = { self, nixpkgs, utils, naersk, oaapis }:
+  outputs = { self, naersk, fenix, nixpkgs, utils, oaapis }:
     utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs { inherit system; };
-      naersk-lib = pkgs.callPackage naersk { };
+    pkgs = import nixpkgs { inherit system; };
+    naersk-lib = pkgs.callPackage naersk { };
+
+    fenixToolchain = fenix.packages.${system}.complete.withComponents [
+      "rustc"
+      "cargo"
+      "clippy"
+      "rustfmt"
+      "rust-src"
+    ];
+
     in rec {
       # This builds your package for running the code.
-      packages.default = naersk-lib.buildPackage ./.;
+
+      packages.default = naersk-lib.buildPackage {
+        src = ./.;
+        cargo = fenixToolchain;
+        rustc = fenixToolchain;
+      };
 
       # Dev shell for just running the code, with a minimal set of Rust tools.
       devShells.run = with pkgs; mkShell {
         buildInputs = [
-          cargo
-          clippy
-          rustc
-          rustfmt
+          fenixToolchain
           pre-commit
           rerun
           protobuf
@@ -41,10 +56,7 @@
       # Dev shell geared toward development, leaving your system's Neovim in place.
       devShells.dev = with pkgs; mkShell {
         buildInputs = [
-          cargo
-          clippy
-          rustc
-          rustfmt
+          fenixToolchain
           pre-commit
           rerun
           protobuf
@@ -66,7 +78,7 @@
           echo "Entering Rust development environment..."
           cargo fetch # Pre-fetch dependencies
 
-          Start Zsh if not already the active shell
+          # Start Zsh if not already the active shell
           if [ "$SHELL" != "$(command -v zsh)" ]; then
             export SHELL="$(command -v zsh)"
             exec zsh
