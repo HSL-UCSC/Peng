@@ -1,7 +1,6 @@
 mod betaflight_quad;
 mod liftoff_quad;
 mod logger;
-// mod quadrotor_factory;
 pub mod planners;
 mod sync;
 
