@@ -121,7 +121,7 @@ planner_schedule:
     planner_type: HyRL
     params:
       # If we want to use standard DQN or the Hybrid model
-      model_type: standard
+      model_type: hybrid
       start_yaw: 0.0
       # Number of points we are requesting in the returned trajectory
       num_waypoints: 2000
