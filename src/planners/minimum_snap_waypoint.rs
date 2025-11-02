@@ -1,8 +1,7 @@
 use crate::SimulationError;
 use async_trait::async_trait;
-use nalgebra::{DMatrix, DVector, SMatrix, Vector3};
+use nalgebra::{SMatrix, Vector3};
 
-use super::TrajectoryPoint;
 use crate::planners::Planner;
 
 /// Waypoint planner that generates a minimum snap trajectory between waypoints
@@ -94,87 +93,40 @@ impl MinimumSnapWaypointPlanner {
     /// planner.compute_minimum_snap_trajectories();
     /// ```
     pub fn compute_minimum_snap_trajectories(&mut self) -> Result<(), SimulationError> {
-        let n_segments = self.waypoints.len() - 1;
-        if self.waypoints.len() != self.times.len() + 1 {
-            return Err(SimulationError::OtherError(
-                "Waypoints and time vector mismatch".into(),
-            ));
+        let n = self.waypoints.len() - 1;
+        for i in 0..n {
+            let duration = self.times[i];
+            let (start, end) = (self.waypoints[i], self.waypoints[i + 1]);
+            let mut a = SMatrix::<f32, 8, 8>::zeros();
+            let mut b = SMatrix::<f32, 8, 3>::zeros();
+            a.fixed_view_mut::<4, 4>(0, 0).fill_with_identity();
+            b.fixed_view_mut::<1, 3>(0, 0).copy_from(&start.transpose());
+            b.fixed_view_mut::<1, 3>(4, 0).copy_from(&end.transpose());
+            // End point constraints
+            for j in 0..8 {
+                a[(4, j)] = duration.powi(j as i32);
+                if j > 0 {
+                    a[(5, j)] = j as f32 * duration.powi(j as i32 - 1);
+                }
+                if j > 1 {
+                    a[(6, j)] = j as f32 * (j - 1) as f32 * duration.powi(j as i32 - 2);
+                }
+                if j > 2 {
+                    a[(7, j)] =
+                        j as f32 * (j - 1) as f32 * (j - 2) as f32 * duration.powi(j as i32 - 3);
+                }
+            }
+            let coeffs = a.lu().solve(&b).ok_or(SimulationError::NalgebraError(
+                "Failed to solve for coefficients in MinimumSnapWaypointPlanner".to_string(),
+            ))?;
+            self.coefficients.push(
+                (0..8)
+                    .map(|j| Vector3::new(coeffs[(j, 0)], coeffs[(j, 1)], coeffs[(j, 2)]))
+                    .collect(),
+            );
         }
-
-        // Estimate velocities using finite differences for Hermite slopes
-        let mut velocities = vec![Vector3::zeros(); self.waypoints.len()];
-        for i in 1..(self.waypoints.len() - 1) {
-            let dt_prev = self.times[i - 1];
-            let dt_next = self.times[i];
-            let dp_prev = (self.waypoints[i] - self.waypoints[i - 1]) / dt_prev;
-            let dp_next = (self.waypoints[i + 1] - self.waypoints[i]) / dt_next;
-            velocities[i] = (dp_prev + dp_next) / 2.0;
-        }
-        velocities[0] = (self.waypoints[1] - self.waypoints[0]) / self.times[0];
-        velocities[self.waypoints.len() - 1] = (self.waypoints[self.waypoints.len() - 1]
-            - self.waypoints[self.waypoints.len() - 2])
-            / self.times[self.times.len() - 1];
-
-        self.coefficients.clear();
-
-        // Construct cubic Hermite segments
-        for i in 0..n_segments {
-            let p0 = self.waypoints[i];
-            let p1 = self.waypoints[i + 1];
-            let v0 = velocities[i] * self.times[i];
-            let v1 = velocities[i + 1] * self.times[i];
-
-            // Coefficients for cubic Hermite spline (normalized time τ ∈ [0, 1])
-            // p(τ) = a0 + a1*τ + a2*τ² + a3*τ³
-            let a0 = p0;
-            let a1 = v0;
-            let a2 = 3.0 * (p1 - p0) - 2.0 * v0 - v1;
-            let a3 = 2.0 * (p0 - p1) + v0 + v1;
-
-            self.coefficients.push(vec![a0, a1, a2, a3]);
-        }
-
         Ok(())
     }
-
-    /// Evaluate cubic Hermite segment at normalized time τ ∈ [0, 1]
-    pub fn evaluate_hermite_segment(
-        coeffs: &[Vector3<f32>],
-        tau: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, Vector3<f32>) {
-        let t = tau;
-        let dt = 1.0;
-        let p = coeffs[0] + coeffs[1] * t + coeffs[2] * t.powi(2) + coeffs[3] * t.powi(3);
-        let v = coeffs[1] + coeffs[2] * 2.0 * t + coeffs[3] * 3.0 * t.powi(2);
-        let a = coeffs[2] * 2.0 + coeffs[3] * 6.0 * t;
-        (p, v / dt, a / dt.powi(2))
-    }
-
-    fn normalized_derivative_term(order: usize, j: usize, tau: f32, T: f32) -> f32 {
-        if j < order {
-            0.0
-        } else {
-            let mut val = 1.0;
-            for k in 0..order {
-                val *= (j - k) as f32;
-            }
-            val * tau.powi((j - order) as i32) / T.powi(order as i32)
-        }
-    }
-
-    fn snap_cost_matrix_unit_interval() -> SMatrix<f32, 6, 6> {
-        let mut q = SMatrix::<f32, 6, 6>::zeros();
-        for i in 4..6 {
-            for j in 4..6 {
-                let coeff_i = (1..=i).rev().take(4).product::<usize>() as f32;
-                let coeff_j = (1..=j).rev().take(4).product::<usize>() as f32;
-                let power = i + j - 7;
-                q[(i, j)] = coeff_i * coeff_j / (power as f32);
-            }
-        }
-        q
-    }
-
     /// Compute the coefficients for yaw trajectories
     /// The yaw trajectory is a cubic polynomial and interpolated between waypoints
     /// # Errors
@@ -240,35 +192,26 @@ impl MinimumSnapWaypointPlanner {
         t: f32,
         coeffs: &[Vector3<f32>],
         yaw_coeffs: &[f32],
-    ) -> (Vector3<f32>, Vector3<f32>, Vector3<f32>, f32, f32) {
+    ) -> (Vector3<f32>, Vector3<f32>, f32, f32) {
         let mut position = Vector3::zeros();
         let mut velocity = Vector3::zeros();
-        let mut acceleration = Vector3::zeros();
         let mut yaw = 0.0;
         let mut yaw_rate = 0.0;
-
         for (i, coeff) in coeffs.iter().enumerate() {
-            let i_f32 = i as f32;
-            let t_pow_i = t.powi(i as i32);
-            position += coeff * t_pow_i;
-
-            if i >= 1 {
-                velocity += coeff * i_f32 * t.powi(i as i32 - 1);
-            }
-            if i >= 2 {
-                acceleration += coeff * i_f32 * (i_f32 - 1.0) * t.powi(i as i32 - 2);
+            let ti = t.powi(i as i32);
+            position += coeff * ti;
+            if i > 0 {
+                velocity += coeff * (i as f32) * t.powi(i as i32 - 1);
             }
         }
-
         for (i, &coeff) in yaw_coeffs.iter().enumerate() {
-            let i_f32 = i as f32;
-            yaw += coeff * t.powi(i as i32);
-            if i >= 1 {
-                yaw_rate += coeff * i_f32 * t.powi(i as i32 - 1);
+            let ti = t.powi(i as i32);
+            yaw += coeff * ti;
+            if i > 0 {
+                yaw_rate += coeff * (i as f32) * t.powi(i as i32 - 1);
             }
         }
-
-        (position, velocity, acceleration, yaw, yaw_rate)
+        (position, velocity, yaw, yaw_rate)
     }
 }
 /// Implement the `Planner` trait for `MinimumSnapWaypointPlanner`
@@ -279,7 +222,7 @@ impl Planner for MinimumSnapWaypointPlanner {
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
-    ) -> TrajectoryPoint {
+    ) -> (Vector3<f32>, Vector3<f32>, f32) {
         // Returns desired position, desired velo
         let relative_time = time - self.start_time;
         // Find the current segment
@@ -294,18 +237,12 @@ impl Planner for MinimumSnapWaypointPlanner {
         }
         // Evaluate the polynomial for the current segment
         let segment_time = relative_time - segment_start_time;
-        let (position, velocity, acceleration, yaw, _yaw_rate) = self.evaluate_polynomial(
+        let (position, velocity, yaw, _yaw_rate) = self.evaluate_polynomial(
             segment_time,
             &self.coefficients[current_segment],
             &self.yaw_coefficients[current_segment],
         );
-
-        TrajectoryPoint {
-            position,
-            velocity,
-            yaw,
-            acceleration: Some(acceleration),
-        }
+        (position, velocity, yaw)
     }
 
     fn is_finished(
