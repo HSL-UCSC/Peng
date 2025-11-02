@@ -2,6 +2,7 @@ use crate::SimulationError;
 use async_trait::async_trait;
 use nalgebra::{SMatrix, Vector3};
 
+use super::TrajectoryPoint;
 use crate::planners::Planner;
 
 /// Waypoint planner that generates a minimum snap trajectory between waypoints
@@ -222,7 +223,7 @@ impl Planner for MinimumSnapWaypointPlanner {
         _current_position: Vector3<f32>,
         _current_velocity: Vector3<f32>,
         time: f32,
-    ) -> (Vector3<f32>, Vector3<f32>, f32) {
+    ) -> TrajectoryPoint {
         // Returns desired position, desired velo
         let relative_time = time - self.start_time;
         // Find the current segment
@@ -242,7 +243,12 @@ impl Planner for MinimumSnapWaypointPlanner {
             &self.coefficients[current_segment],
             &self.yaw_coefficients[current_segment],
         );
-        (position, velocity, yaw)
+        TrajectoryPoint {
+            position,
+            velocity,
+            yaw,
+            acceleration: None,
+        }
     }
 
     fn is_finished(
