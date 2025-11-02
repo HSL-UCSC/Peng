@@ -548,8 +548,24 @@ pub fn log_data(
     rec.log(
         "world/quad/desired_position",
         &rerun::Points3D::new([(desired_position.x, desired_position.y, desired_position.z)])
-            .with_radii([0.1])
-            .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
+            .with_radii([0.025])
+            .with_colors([rerun::Color::from([255, 255, 255, 128])]),
+    )?;
+    
+    // Log the drone mesh as a child of base_link so it transforms with the quadrotor
+    rec.log(
+        "world/quad/base_link/drone_mesh",
+        &rerun::Asset3D::from_file("assets/starling.obj")
+            .map_err(|e| SimulationError::OtherError(format!("Failed to load drone mesh: {}", e)))?
+            .with_albedo_factor(*rerun::Color::from([200, 200, 200, 255])), // Light gray
+    )?;
+    
+    // Apply static rotation to the mesh (90 degrees around X-axis)
+    rec.log(
+        "world/quad/base_link/drone_mesh",
+        &rerun::Transform3D::from_rotation(
+            rerun::Quaternion::from_xyzw([0.7071, 0.0, 0.0, 0.7071]) // 90° around X
+        ),
     )?;
     rec.log(
         "world/quad/base_link",
@@ -566,7 +582,7 @@ pub fn log_data(
                 quad_state.orientation.w,
             ]),
         )
-        .with_axis_length(0.7),
+        .with_axis_length(0.5),
     )?;
     let (quad_roll, quad_pitch, quad_yaw) = quad_state.orientation.euler_angles();
     let quad_euler_angles: Vector3<f32> = Vector3::new(quad_roll, quad_pitch, quad_yaw);
@@ -775,7 +791,7 @@ pub fn log_trajectory(
         .collect::<Vec<(f32, f32, f32)>>();
     rec.log(
         "world/quad/path",
-        &rerun::LineStrips3D::new([path]).with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+        &rerun::LineStrips3D::new([path]).with_colors([rerun::Color::from([0, 255, 255, 128])]),
     )?;
     Ok(())
 }
