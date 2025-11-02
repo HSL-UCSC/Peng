@@ -13,9 +13,13 @@
       url   = "github:HSL-UCSC/Quad-RL";
       flake = false;
     };
+    hyrl = {
+      url = "git+https://github.com/friend0/ObstacleAvoidanceHyRL?ref=rel-0.1.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, naersk, fenix, nixpkgs, utils, oaapis }:
+  outputs = { self, naersk, fenix, nixpkgs, utils, oaapis, hyrl }:
     utils.lib.eachDefaultSystem (system: let
     pkgs = import nixpkgs { inherit system; };
     naersk-lib = pkgs.callPackage naersk { };
@@ -44,12 +48,16 @@
           pre-commit
           rerun
           protobuf
+          hyrl.packages.${system}.default
+          netcat
         ]
         ++ (if stdenv.isLinux then [ pkg-config systemd ] else []);
 
         shellHook = ''
           export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
           echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
+          echo ""
+          echo "HyRL server available: run 'hyrl-server' to start"
         '';
       };
 
@@ -60,6 +68,8 @@
           pre-commit
           rerun
           protobuf
+          hyrl.packages.${system}.default
+          netcat
         ];
         shellHook = ''
           export GIT_CONFIG=$PWD/.gitconfig
@@ -76,6 +86,7 @@
           '' else ""}
           
           echo "Entering Rust development environment..."
+          echo "HyRL server available: run 'hyrl-server' to start"
           cargo fetch # Pre-fetch dependencies
 
           # Start Zsh if not already the active shell
@@ -83,6 +94,58 @@
             export SHELL="$(command -v zsh)"
             exec zsh
           fi
+        '';
+      };
+
+      # Dev shell with HyRL server auto-started
+      devShells.withServer = with pkgs; mkShell {
+        buildInputs = [
+          fenixToolchain
+          pre-commit
+          rerun
+          protobuf
+          hyrl.packages.${system}.default
+          netcat
+        ]
+        ++ (if stdenv.isLinux then [ pkg-config systemd ] else []);
+
+        shellHook = ''
+          export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
+          echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
+          
+          echo "Starting HyRL Obstacle Avoidance server in background..."
+          # Redirect output to avoid cluttering the shell
+          hyrl-server > /tmp/hyrl-server.log 2>&1 &
+          SERVER_PID=$!
+          
+          # Function to cleanup server on exit
+          cleanup() {
+            echo "Stopping HyRL server (PID: $SERVER_PID)..."
+            kill $SERVER_PID 2>/dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+            echo "Server stopped."
+          }
+          trap cleanup EXIT INT TERM
+          
+          # Wait for server to start
+          echo "Waiting for server to start..."
+          for i in {1..30}; do
+            if nc -z localhost 50051 2>/dev/null; then
+              echo "HyRL server ready on localhost:50051"
+              echo "Server logs: tail -f /tmp/hyrl-server.log"
+              break
+            fi
+            sleep 1
+          done
+          
+          if ! nc -z localhost 50051 2>/dev/null; then
+            echo "Warning: Server may still be starting or failed to start"
+            echo "Check logs: cat /tmp/hyrl-server.log"
+          fi
+          
+          echo ""
+          echo "Development environment ready with HyRL server running in background"
+          echo "Server will stop automatically when you exit this shell"
         '';
       };
 

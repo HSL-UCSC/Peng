@@ -21,6 +21,27 @@
         "type": "github"
       }
     },
+    "hyrl": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1762116628,
+        "narHash": "sha256-Wk6/5+g+xqj9Ay3MNNwiez9QxYTCxtS+CuYehX/uoQ0=",
+        "ref": "rel-0.1.1",
+        "rev": "4a946348a9839b67347d30c2ea6c052918607fd7",
+        "revCount": 65,
+        "type": "git",
+        "url": "https://github.com/friend0/ObstacleAvoidanceHyRL"
+      },
+      "original": {
+        "ref": "rel-0.1.1",
+        "type": "git",
+        "url": "https://github.com/friend0/ObstacleAvoidanceHyRL"
+      }
+    },
     "naersk": {
       "inputs": {
         "nixpkgs": "nixpkgs"
@@ -87,6 +108,7 @@
     "root": {
       "inputs": {
         "fenix": "fenix",
+        "hyrl": "hyrl",
         "naersk": "naersk",
         "nixpkgs": "nixpkgs_2",
         "oaapis": "oaapis",
