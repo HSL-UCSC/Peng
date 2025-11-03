@@ -21,29 +21,32 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v26
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-          nix_path: nixpkgs=channel:nixos-unstable
+        uses: DeterminateSystems/nix-installer-action@v9
 
-      - name: Cache Nix Store
-        uses: actions/cache@v3
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v14
         with:
-          path: |
-            /nix/store
-            /nix/var/nix
-            ~/.cache/nix
-          key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-keys: |
-            nix-${{ runner.os }}-
+          name: hsl-peng
+          skipPush: true
+
 
       - name: Install system dependencies (Linux only)
         if: runner.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
 
+      - name: Clean Nix cache if corrupted
+        if: failure()
+        run: |
+          rm -rf ~/.cache/nix/gitv3 || true
+          nix-collect-garbage || true
+
       - name: Enter Nix flake shell & Build
         run: |
+          # Clean all Nix caches to avoid corruption
+          rm -rf ~/.cache/nix || true
+          nix-collect-garbage || true
+          
+          # Build directly without flake update
           nix develop --command cargo build --verbose
 
       - name: Run Tests

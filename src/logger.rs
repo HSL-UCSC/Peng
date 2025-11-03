@@ -548,9 +548,50 @@ pub fn log_data(
     rec.log(
         "world/quad/desired_position",
         &rerun::Points3D::new([(desired_position.x, desired_position.y, desired_position.z)])
-            .with_radii([0.1])
-            .with_colors([rerun::Color::from_rgb(255, 255, 255)]),
+            .with_radii([0.025])
+            .with_colors([rerun::Color::from([255, 255, 255, 128])]),
     )?;
+
+    // Log simple quadrotor representation using basic shapes
+    // Center body (small sphere)
+    rec.log(
+        "world/quad/base_link/body",
+        &rerun::Points3D::new([(0.0, 0.0, 0.0)])
+            .with_radii([0.025]) // Same size as desired position
+            .with_colors([rerun::Color::from_rgb(100, 100, 100)]), // Dark gray vs white target
+    )?;
+
+    // Four arms as thin cylinders at 45-degree angles
+    let arm_length = 0.15;
+    let cos45 = std::f32::consts::FRAC_1_SQRT_2;
+    for (i, (x, y)) in [
+        (cos45, cos45),
+        (-cos45, cos45),
+        (-cos45, -cos45),
+        (cos45, -cos45),
+    ]
+    .iter()
+    .enumerate()
+    {
+        // Draw arm as line strip from center to end
+        rec.log(
+            format!("world/quad/base_link/arm_{}", i),
+            &rerun::LineStrips3D::new([vec![
+                (0.0, 0.0, 0.0),
+                (x * arm_length, y * arm_length, 0.0),
+            ]])
+            .with_radii([0.005]) // 1cm diameter arms
+            .with_colors([rerun::Color::from_rgb(80, 80, 80)]),
+        )?;
+
+        // Propellers as spheres at arm ends
+        rec.log(
+            format!("world/quad/base_link/prop_{}", i),
+            &rerun::Points3D::new([(x * arm_length, y * arm_length, 0.0)])
+                .with_radii([0.03])
+                .with_colors([rerun::Color::from_rgb(50, 50, 200)]),
+        )?;
+    }
     rec.log(
         "world/quad/base_link",
         &rerun::Transform3D::from_translation_rotation(
@@ -566,7 +607,7 @@ pub fn log_data(
                 quad_state.orientation.w,
             ]),
         )
-        .with_axis_length(0.7),
+        .with_axis_length(0.5),
     )?;
     let (quad_roll, quad_pitch, quad_yaw) = quad_state.orientation.euler_angles();
     let quad_euler_angles: Vector3<f32> = Vector3::new(quad_roll, quad_pitch, quad_yaw);
@@ -775,7 +816,7 @@ pub fn log_trajectory(
         .collect::<Vec<(f32, f32, f32)>>();
     rec.log(
         "world/quad/path",
-        &rerun::LineStrips3D::new([path]).with_colors([rerun::Color::from_rgb(0, 255, 255)]),
+        &rerun::LineStrips3D::new([path]).with_colors([rerun::Color::from([0, 255, 255, 128])]),
     )?;
     Ok(())
 }

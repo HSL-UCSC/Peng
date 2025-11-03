@@ -3,78 +3,179 @@
 
   inputs = {
     naersk.url = "github:nix-community/naersk/master";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
     oaapis = {
-      url   = "github:HSL-UCSC/Quad-RL";
+      url = "github:HSL-UCSC/Quad-RL";
       flake = false;
+    };
+    hyrl = {
+      url = "git+https://github.com/friend0/ObstacleAvoidanceHyRL?ref=rel-0.1.1";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, utils, naersk, oaapis }:
-    utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs { inherit system; };
-      naersk-lib = pkgs.callPackage naersk { };
-    in rec {
-      # This builds your package for running the code.
-      packages.default = naersk-lib.buildPackage ./.;
+  outputs = { self, naersk, fenix, nixpkgs, utils, treefmt-nix, oaapis, hyrl }:
+    utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+        naersk-lib = pkgs.callPackage naersk { };
 
-      # Dev shell for just running the code, with a minimal set of Rust tools.
-      devShells.run = with pkgs; mkShell {
-        buildInputs = [
-          cargo
-          clippy
-          rustc
-          rustfmt
-          pre-commit
-          rerun
-          protobuf
-        ]
-        ++ (if stdenv.isLinux then [ pkg-config systemd ] else []);
-
-        shellHook = ''
-          export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
-          echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
-        '';
-      };
-
-      # Dev shell geared toward development, leaving your system's Neovim in place.
-      devShells.dev = with pkgs; mkShell {
-        buildInputs = [
-          cargo
-          clippy
-          rustc
-          rustfmt
-          pre-commit
-          rerun
-          protobuf
+        fenixToolchain = fenix.packages.${system}.complete.withComponents [
+          "rustc"
+          "cargo"
+          "clippy"
+          "rustfmt"
+          "rust-src"
         ];
-        shellHook = ''
-          export GIT_CONFIG=$PWD/.gitconfig
-          export CARGO_NET_GIT_FETCH_WITH_CLI=true
-          export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
-          export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
 
-          ${if pkgs.stdenv.isLinux then ''
-            export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
-          '' else ""}
+        treefmtEval = treefmt-nix.lib.evalModule pkgs {
+          projectRootFile = "flake.nix";
+          programs = {
+            rustfmt = {
+              enable = true;
+              package = fenixToolchain;
+            };
+            nixpkgs-fmt.enable = true;
+            taplo.enable = true;
+            prettier.enable = true;
+          };
+          settings.global.excludes = [ "target/" "logs/" "*.rrd" ".github/" ".vscode/" ];
+        };
+
+      in
+      rec {
+        # This builds your package for running the code.
+
+        packages.default = naersk-lib.buildPackage {
+          src = ./.;
+          cargo = fenixToolchain;
+          rustc = fenixToolchain;
+        };
+
+        # Dev shell for just running the code, with a minimal set of Rust tools.
+        devShells.run = with pkgs; mkShell {
+          buildInputs = [
+            fenixToolchain
+            pre-commit
+            rerun
+            protobuf
+            hyrl.packages.${system}.default
+            netcat
+            tree
+            treefmtEval.config.build.wrapper
+          ]
+          ++ (if stdenv.isLinux then [ pkg-config systemd ] else [ ]);
+
+          shellHook = ''
+            export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
+            echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
+            echo ""
+            echo "HyRL server available: run 'hyrl-server' to start"
+          '';
+        };
+
+        # Dev shell geared toward development, leaving your system's Neovim in place.
+        devShells.dev = with pkgs; mkShell {
+          buildInputs = [
+            fenixToolchain
+            pre-commit
+            rerun
+            protobuf
+            hyrl.packages.${system}.default
+            netcat
+            tree
+            treefmtEval.config.build.wrapper
+          ];
+          shellHook = ''
+            export GIT_CONFIG=$PWD/.gitconfig
+            export CARGO_NET_GIT_FETCH_WITH_CLI=true
+            export GIT_SSH_COMMAND="ssh -F ~/.ssh/config"
+            export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
+
+            ${if pkgs.stdenv.isLinux then ''
+              export PKG_CONFIG_PATH="${pkgs.systemd}/lib/pkgconfig:$PKG_CONFIG_PATH"
+            '' else ""}
           
-          ${if pkgs.stdenv.isDarwin then ''
-            echo "Running on macOS, using Darwin-specific dependencies."
-          '' else ""}
+            ${if pkgs.stdenv.isDarwin then ''
+              echo "Running on macOS, using Darwin-specific dependencies."
+            '' else ""}
           
-          echo "Entering Rust development environment..."
-          cargo fetch # Pre-fetch dependencies
+            echo "Entering Rust development environment..."
+            echo "HyRL server available: run 'hyrl-server' to start"
+            cargo fetch # Pre-fetch dependencies
 
-          Start Zsh if not already the active shell
-          if [ "$SHELL" != "$(command -v zsh)" ]; then
-            export SHELL="$(command -v zsh)"
-            exec zsh
-          fi
-        '';
-      };
+            # Start Zsh if not already the active shell
+            if [ "$SHELL" != "$(command -v zsh)" ]; then
+              export SHELL="$(command -v zsh)"
+              exec zsh
+            fi
+          '';
+        };
 
-      # Set the default dev shell to "run"
-      devShell = devShells.run;
-    });
+        # Dev shell with HyRL server auto-started
+        devShells.withServer = with pkgs; mkShell {
+          buildInputs = [
+            fenixToolchain
+            pre-commit
+            rerun
+            protobuf
+            hyrl.packages.${system}.default
+            netcat
+            tree
+            treefmtEval.config.build.wrapper
+          ]
+          ++ (if stdenv.isLinux then [ pkg-config systemd ] else [ ]);
+
+          shellHook = ''
+            export OBSTACLE_AVOIDANCE_APIS=${oaapis.outPath}
+            echo "Using ObstacleAvoidanceAPIs from: ${oaapis.outPath}"
+          
+            echo "Starting HyRL Obstacle Avoidance server in background..."
+            # Redirect output to avoid cluttering the shell
+            hyrl-server > /tmp/hyrl-server.log 2>&1 &
+            SERVER_PID=$!
+          
+            # Function to cleanup server on exit
+            cleanup() {
+              echo "Stopping HyRL server (PID: $SERVER_PID)..."
+              kill $SERVER_PID 2>/dev/null || true
+              wait $SERVER_PID 2>/dev/null || true
+              echo "Server stopped."
+            }
+            trap cleanup EXIT INT TERM
+          
+            # Wait for server to start
+            echo "Waiting for server to start..."
+            for i in {1..30}; do
+              if nc -z localhost 50051 2>/dev/null; then
+                echo "HyRL server ready on localhost:50051"
+                echo "Server logs: tail -f /tmp/hyrl-server.log"
+                break
+              fi
+              sleep 1
+            done
+          
+            if ! nc -z localhost 50051 2>/dev/null; then
+              echo "Warning: Server may still be starting or failed to start"
+              echo "Check logs: cat /tmp/hyrl-server.log"
+            fi
+          
+            echo ""
+            echo "Development environment ready with HyRL server running in background"
+            echo "Server will stop automatically when you exit this shell"
+          '';
+        };
+
+        # Formatter for the project
+        formatter = treefmtEval.config.build.wrapper;
+
+        # Set the default dev shell to "run"
+        devShell = devShells.run;
+      });
 }

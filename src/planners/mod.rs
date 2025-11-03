@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::environment::Obstacle;
 use crate::quadrotor::QuadrotorState;
-use crate::{parse_bool, parse_f32, parse_string, parse_vector3};
+use crate::{parse_f32, parse_string, parse_vector3};
 use crate::{parse_uint, SimulationError};
 use async_trait::async_trait;
 use nalgebra::Vector3;
@@ -133,8 +133,13 @@ pub struct TrajectoryPoint {
 ///         current_position: Vector3<f32>,
 ///         current_velocity: Vector3<f32>,
 ///         time: f32,
-/// ) -> (Vector3<f32>, Vector3<f32>, f32) {
-///         (Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 0.0)
+/// ) -> peng_quad::planners::TrajectoryPoint {
+///         peng_quad::planners::TrajectoryPoint {
+///             position: Vector3::new(0.0, 0.0, 0.0),
+///             velocity: Vector3::new(0.0, 0.0, 0.0),
+///             acceleration: None,
+///             yaw: 0.0,
+///         }
 ///     }
 ///     fn is_finished(
 ///         &self,
@@ -171,8 +176,13 @@ pub trait Planner {
     ///         _current_position: Vector3<f32>,
     ///         _current_velocity: Vector3<f32>,
     ///         _time: f32,
-    ///     ) -> (Vector3<f32>, Vector3<f32>, f32) {
-    ///         (Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 0.0)
+    ///     ) -> peng_quad::planners::TrajectoryPoint {
+    ///         peng_quad::planners::TrajectoryPoint {
+    ///             position: Vector3::new(0.0, 0.0, 0.0),
+    ///             velocity: Vector3::new(0.0, 0.0, 0.0),
+    ///             acceleration: None,
+    ///             yaw: 0.0,
+    ///         }
     ///     }
     ///
     ///     fn is_finished(
@@ -185,12 +195,12 @@ pub trait Planner {
     /// }
     ///
     /// let planner = TestPlanner;
-    /// let (pos, vel, yaw) = block_on(planner.plan(
+    /// let trajectory_point = block_on(planner.plan(
     ///     Vector3::new(1.0, 2.0, 3.0),
     ///     Vector3::new(0.1, 0.2, 0.3),
     ///     0.5,
     /// ));
-    /// assert_eq!(pos, Vector3::new(0.0, 0.0, 0.0));
+    /// assert_eq!(trajectory_point.position, Vector3::new(0.0, 0.0, 0.0));
     /// ```
     async fn plan(
         &self,
@@ -218,8 +228,13 @@ pub trait Planner {
     ///         current_position: Vector3<f32>,
     ///         current_velocity: Vector3<f32>,
     ///         time: f32,
-    /// ) -> (Vector3<f32>, Vector3<f32>, f32) {
-    ///         (Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 0.0)
+    /// ) -> peng_quad::planners::TrajectoryPoint {
+    ///         peng_quad::planners::TrajectoryPoint {
+    ///             position: Vector3::new(0.0, 0.0, 0.0),
+    ///             velocity: Vector3::new(0.0, 0.0, 0.0),
+    ///             acceleration: None,
+    ///             yaw: 0.0,
+    ///         }
     ///     }
     ///     fn is_finished(
     ///         &self,
@@ -241,10 +256,11 @@ pub trait Planner {
 /// # Example
 /// ```
 /// use nalgebra::Vector3;
-/// use peng_quad::planners::PlannerManager;
+/// use peng_quad::planners::{PlannerManager, PlannerStepConfig};
 /// let initial_position = Vector3::new(0.0, 0.0, 1.0);
 /// let initial_yaw = 0.0;
-/// let planner_manager = PlannerManager::new(initial_position, initial_yaw);
+/// let planner_config = vec![PlannerStepConfig::default()];
+/// let planner_manager = PlannerManager::new(&planner_config, initial_position, initial_yaw);
 /// ```
 pub struct PlannerManager {
     /// The current planner
@@ -263,13 +279,14 @@ impl PlannerManager {
     /// # Example
     /// ```
     /// use nalgebra::Vector3;
-    /// use peng_quad::planners::PlannerManager;
+    /// use peng_quad::planners::{PlannerManager, PlannerStepConfig};
     /// let initial_position = Vector3::new(0.0, 0.0, 1.0);
     /// let initial_yaw = 0.0;
-    /// let planner_manager = PlannerManager::new(initial_position, initial_yaw);
+    /// let planner_config = vec![PlannerStepConfig::default()];
+    /// let planner_manager = PlannerManager::new(&planner_config, initial_position, initial_yaw);
     /// ```
     pub async fn new(
-        planner_config: &Vec<PlannerStepConfig>,
+        planner_config: &[PlannerStepConfig],
         initial_position: Vector3<f32>,
         initial_yaw: f32,
     ) -> Result<Self, SimulationError> {
@@ -281,7 +298,7 @@ impl PlannerManager {
         let mut eager_planners: HashMap<u32, HyRLPlanner> = HashMap::new();
 
         // TODO: use the planner index instead of the time/step as the key
-        for (i, config) in planner_config.iter().enumerate() {
+        for config in planner_config.iter() {
             let params = config.params.clone();
             match config.planner_type.as_str() {
                 "HyRL" => {
@@ -340,11 +357,12 @@ impl PlannerManager {
     /// # Example
     /// ```
     /// use nalgebra::Vector3;
-    /// use peng_quad::planners::{PlannerManager, CirclePlanner, PlannerType};
+    /// use peng_quad::planners::{PlannerManager, CirclePlanner, PlannerType, PlannerStepConfig};
     ///
     /// let initial_position = Vector3::new(0.0, 0.0, 1.0);
     /// let initial_yaw = 0.0;
-    /// let mut planner_manager = PlannerManager::new(initial_position, initial_yaw);
+    /// let planner_config = vec![PlannerStepConfig::default()];
+    /// let mut planner_manager = PlannerManager::new(&planner_config, initial_position, initial_yaw);
     ///
     /// let new_planner = CirclePlanner {
     ///     center: Vector3::new(0.0, 0.0, 1.0),
@@ -358,6 +376,8 @@ impl PlannerManager {
     ///     start_position: Vector3::new(0.0, 0.0, 1.0),
     /// };
     ///
+    /// use futures::executor::block_on;
+    /// let mut planner_manager = block_on(planner_manager).unwrap();
     /// planner_manager.set_planner(PlannerType::Circle(new_planner));
     /// assert!(matches!(planner_manager.current_planner, PlannerType::Circle(_)));
     /// ```
@@ -404,7 +424,9 @@ impl PlannerManager {
     /// let obstacles = vec![Obstacle::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0)];
     /// let initial_position = Vector3::new(0.0, 0.0, 1.0);
     /// let initial_yaw = 0.0;
-    /// let planner_manager = PlannerManager::new(initial_position, initial_yaw);
+    /// let planner_config = vec![PlannerStepConfig::default()];
+    /// let planner_manager = PlannerManager::new(&planner_config, initial_position, initial_yaw);
+    /// let mut planner_manager = block_on(planner_manager).unwrap();
     /// let planner = block_on( async { planner_manager.create_planner(&step, &quadrotor_state, time, &obstacles).await.unwrap() } );
     /// match planner {
     ///    PlannerType::MinimumJerkLine(_) => log::info!("Created MinimumJerkLine planner"),
@@ -521,7 +543,7 @@ impl PlannerManager {
             }
             #[cfg(feature = "hyrl")]
             "HyRL" => {
-                let url = parse_string(params, "url")?;
+                let _url = parse_string(params, "url")?;
                 let key: u32 = step
                     .step
                     .map(|s| s as u32)
@@ -572,19 +594,21 @@ impl PlannerManager {
     /// use peng_quad::planners::{PlannerManager, PlannerStepConfig};
     /// let initial_position = Vector3::new(0.0, 0.0, 1.0);
     /// let initial_yaw = 0.0;
-    /// let mut planner_manager = PlannerManager::new(initial_position, initial_yaw);
+    /// let planner_config = vec![PlannerStepConfig::default()];
+    /// let mut planner_manager = PlannerManager::new(&planner_config, initial_position, initial_yaw);
     /// let current_position = Vector3::new(0.0, 0.0, 1.0);
     /// let current_orientation = UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0);
     /// let current_velocity = Vector3::new(0.0, 0.0, 0.0);
     /// let obstacles = vec![];
     /// let step = 0;
     /// let time = 0.0;
+    /// let mut planner_manager = block_on(planner_manager).unwrap();
     /// let result = block_on(async { planner_manager.update(step, time, &QuadrotorState::default(), &obstacles, &vec![PlannerStepConfig::default()]).await });
     /// match result {
-    ///     Ok((target_position, target_velocity, target_yaw)) => {
-    ///         println!("Target Position: {:?}", target_position);
-    ///         println!("Target Velocity: {:?}", target_velocity);
-    ///         println!("Target Yaw: {:?}", target_yaw);
+    ///     Ok(trajectory_point) => {
+    ///         println!("Target Position: {:?}", trajectory_point.position);
+    ///         println!("Target Velocity: {:?}", trajectory_point.velocity);
+    ///         println!("Target Yaw: {:?}", trajectory_point.yaw);
     ///     }
     ///     Err(SimulationError) => {
     ///         log::error!("Error: Planner is not finished");
@@ -704,7 +728,7 @@ impl PlannerType {
     ///     target_yaw: 0.0
     /// };
     /// let hover_planner_type = PlannerType::Hover(hover_planner);
-    /// let (pos, _vel, _yaw) = block_on(async {
+    /// let trajectory_point = block_on(async {
     ///     hover_planner_type
     ///         .plan(
     ///             Vector3::new(0.0, 0.0, 0.0),

@@ -1,6 +1,6 @@
 use_rerun: true # Enable visualization using rerun.io
 file_logger: "standard"
-render_depth: true # Enable rendering depth
+render_depth: false # Enable rendering depth
 use_multithreading_depth_rendering: true # Enable multithreading for depth rendering for large resolution (above 32x24)
 
 rerun_blueprint: "config/hsl_blueprint.rbl"
@@ -45,7 +45,7 @@ imu:
 maze:
   lower_bounds: [-4.0, -2.0, 0.0] # Lower bounds of the maze [x, y, z] (m)
   upper_bounds: [4.0, 2.0, 2.0] # Upper bounds of the maze [x, y, z] (m)
-  num_obstacles: 20 # Number of obstacles in the maze
+  num_obstacles: 0 # Number of obstacles in the maze
   obstacles_velocity_bounds: [0.2, 0.2, 0.1] # Maximum velocity of obstacles [x, y, z] (m/s)
   obstacles_radius_bounds: [0.05, 0.1] # Range of obstacle radii [min, max] (m)
 
@@ -82,7 +82,7 @@ planner_schedule:
       ramp_time: 5.0 # Time for smooth transition (s)
 
   # Circular trajectory
-  - step: 27000
+  - time: 1
     planner_type: Circle
     params:
       center: [0.5, 0.5, 1.0] # Center of the circle [x, y, z] (m)
@@ -92,7 +92,7 @@ planner_schedule:
       ramp_time: 2.0 # Time for smooth transition (s)
 
   # Another Minimum Jerk Line trajectory
-  - step: 32000
+  - time: 6
     planner_type: MinimumJerkLine
     params:
       end_position: [-2.5, 0.0, 1.0] # Target end position [x, y, z] (m)
@@ -100,7 +100,7 @@ planner_schedule:
       duration: 3.0 # Duration of the trajectory (s)
 
   # Obstacle Avoidance trajectory
-  - step: 35000
+  - time: 9
     planner_type: ObstacleAvoidance
     params:
       target_position: [2.5, 1.0, 0.5] # Target position [x, y, z] (m)
@@ -114,7 +114,7 @@ planner_schedule:
       max_speed: 0.1 # Maximum speed (m/s)
 
   # Minimum Snap Waypoint trajectory
-  - step: 45000
+  - time: 19
     planner_type: MinimumSnapWaypoint
     params:
       waypoints: # List of waypoints [x, y, z] (m)
@@ -126,7 +126,7 @@ planner_schedule:
       segment_times: [5.0, 5.0, 5.0, 5.0] # Time to reach each waypoint (s)
 
   # Landing trajectory
-  - step: 65000
+  - time: 39
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)

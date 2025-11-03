@@ -509,7 +509,7 @@ impl Quadrotor {
 /// let max_integral_att = [1.0, 1.0, 1.0];
 /// let mass = 1.0;
 /// let gravity = 9.81;
-/// let pid_controller = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
+/// let pid_controller = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity, false);
 /// ```
 pub struct PIDController {
     pub kpid_pos: Arc<Mutex<[Vector3<f32>; 3]>>,
@@ -718,7 +718,6 @@ impl PIDController {
     // //TODO: move this out of doctest
     /// // let control_torques = pid.compute_attitude_control(&desired_orientation, &current_orientation, &current_angular_velocity, dt);
     /// ```
-
     pub async fn compute_attitude_control(
         &mut self,
         desired_orientation: &UnitQuaternion<f32>,
@@ -764,7 +763,7 @@ impl PIDController {
     /// let max_integral_att = [1.0, 1.0, 1.0];
     /// let mass = 1.0;
     /// let gravity = 9.81;
-    /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
+    /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity, false);
     /// let desired_position = Vector3::new(0.0, 0.0, 1.0);
     /// let desired_velocity = Vector3::<f32>::zeros();
     /// let desired_yaw = 0.0;
@@ -774,6 +773,7 @@ impl PIDController {
     /// //TODO: move this out of doctest
     /// // let (thrust, desired_orientation) = pid.compute_position_control(&desired_position, &desired_velocity, desired_yaw, &current_position, &current_velocity, dt);
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn compute_position_control(
         &mut self,
         desired_position: &Vector3<f32>,
@@ -796,9 +796,7 @@ impl PIDController {
             + kpid_pos[1].component_mul(&error_velocity)
             + kpid_pos[2].component_mul(&self.integral_pos_error);
 
-        let feedforward_acceleration = feedforward_acceleration
-            .unwrap_or(&Vector3::zeros())
-            .clone();
+        let feedforward_acceleration = *feedforward_acceleration.unwrap_or(&Vector3::zeros());
         let gravity_compensation = Vector3::new(0.0, 0.0, self.gravity);
         let total_acceleration = if self.feedforward {
             acceleration + gravity_compensation + feedforward_acceleration

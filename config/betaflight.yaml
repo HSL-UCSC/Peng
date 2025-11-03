@@ -27,8 +27,8 @@ quadrotor:
     max_thrust_kg: 0.223
     arm_length_m: .065
     yaw_torque_constant: .0052
-  # serial_port: "/dev/tty.usbserial-B001JE6N"
-  serial_port: "COM6"
+  serial_port: "/dev/tty.usbserial-B001JE6N"
+  # serial_port: "COM6"
   baud_rate: 460800
 
 pid_controller:
@@ -102,7 +102,7 @@ planner_schedule:
   #   planner_type: HyRL
   #   params:
   #     start_yaw: 0.0
-  #     num_waypoints: 500 
+  #     num_waypoints: 500
   #     url: http://172.26.45.187:50052
   #     start_position: [-1.5, 0.0, 0.5]
   #     target_position: [3.5, 0.0, 0.5]

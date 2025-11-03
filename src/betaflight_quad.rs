@@ -4,10 +4,7 @@ use crate::quadrotor::{OrientationFilter, QuadrotorInterface, QuadrotorState};
 use crate::SimulationError;
 use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
-use std::f32::consts::PI;
 use std::time::Duration;
-use std::time::Instant;
-use tokio::sync::watch;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
 
@@ -271,7 +268,6 @@ impl QuadrotorInterface for BetaflightQuad {
             (position, rotation)
         };
 
-        
         let v_body = self.velocity_body(rotation, self.previous_state.position, position, dt);
         let omega_body =
             self.angular_velocity(self.previous_state.orientation, sample.rotation(), dt, 0.1);
