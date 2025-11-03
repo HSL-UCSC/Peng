@@ -509,7 +509,7 @@ impl Quadrotor {
 /// let max_integral_att = [1.0, 1.0, 1.0];
 /// let mass = 1.0;
 /// let gravity = 9.81;
-/// let pid_controller = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
+/// let pid_controller = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity, false);
 /// ```
 pub struct PIDController {
     pub kpid_pos: Arc<Mutex<[Vector3<f32>; 3]>>,
@@ -764,7 +764,7 @@ impl PIDController {
     /// let max_integral_att = [1.0, 1.0, 1.0];
     /// let mass = 1.0;
     /// let gravity = 9.81;
-    /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity);
+    /// let mut pid = PIDController::new(kpid_pos, kpid_att, max_integral_pos, max_integral_att, mass, gravity, false);
     /// let desired_position = Vector3::new(0.0, 0.0, 1.0);
     /// let desired_velocity = Vector3::<f32>::zeros();
     /// let desired_yaw = 0.0;
