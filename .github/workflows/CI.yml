@@ -65,10 +65,11 @@ jobs:
 
       - name: Enter Nix flake shell & Build
         run: |
-          # Clean all Nix caches and update flake inputs to avoid git corruption
+          # Clean all Nix caches to avoid corruption
           rm -rf ~/.cache/nix || true
           nix-collect-garbage || true
-          nix flake update --commit-lock-file || nix flake lock --update-input hyrl
+          
+          # Build directly without flake update
           nix develop --command cargo build --verbose
 
       - name: Run Tests
