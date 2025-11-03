@@ -20,6 +20,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Clean potential corrupted git caches
+        run: |
+          # Clean any potential corrupted git caches before Nix operations
+          sudo rm -rf /nix/var/nix/gcroots/auto/* || true
+          sudo rm -rf ~/.cache/nix || true
+          rm -rf ~/.cache/nix || true
+
       - name: Install Nix
         uses: cachix/install-nix-action@v27
         with:
