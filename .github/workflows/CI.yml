@@ -27,13 +27,12 @@ jobs:
           set +e  # Don't fail on errors
           for i in {1..32}; do
             sudo dscl . -delete /Users/_nixbld$i 2>/dev/null
-            sudo dscl . -delete /Groups/_nixbld$i 2>/dev/null
           done
           sudo dscl . -delete /Groups/nixbld 2>/dev/null
           set -e  # Re-enable failing on errors
           
-          # Install Nix with determinate installer (more reliable on macOS)
-          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --determinate
+          # Install Nix with determinate installer (non-interactive)
+          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm
 
       - name: Install Nix (Linux)
         if: runner.os == 'Linux'
