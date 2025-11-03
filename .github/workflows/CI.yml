@@ -20,16 +20,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Clean up existing Nix users (macOS only)
+      - name: Install Nix (with cleanup on macOS)
         if: runner.os == 'macOS'
         run: |
-          # Clean up any existing nixbld users to prevent conflicts
+          # Clean up any existing nixbld users and groups
+          set +e  # Don't fail on errors
           for i in {1..32}; do
-            sudo dscl . -delete /Users/_nixbld$i 2>/dev/null || true
+            sudo dscl . -delete /Users/_nixbld$i 2>/dev/null
+            sudo dscl . -delete /Groups/_nixbld$i 2>/dev/null
           done
-          sudo dscl . -delete /Groups/nixbld 2>/dev/null || true
+          sudo dscl . -delete /Groups/nixbld 2>/dev/null
+          set -e  # Re-enable failing on errors
+          
+          # Install Nix with determinate installer (more reliable on macOS)
+          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --determinate
 
-      - name: Install Nix
+      - name: Install Nix (Linux)
+        if: runner.os == 'Linux'
         uses: cachix/install-nix-action@v26
         with:
           extra_nix_config: |
