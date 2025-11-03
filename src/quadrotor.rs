@@ -1,9 +1,9 @@
+use crate::Quadrotor;
+use crate::SimulationError;
 use crate::betaflight_quad::BetaflightQuad;
 use crate::config;
 use crate::config::QuadrotorConfigurations;
 use crate::liftoff_quad::LiftoffQuad;
-use crate::Quadrotor;
-use crate::SimulationError;
 use nalgebra::{UnitQuaternion, Vector3};
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};

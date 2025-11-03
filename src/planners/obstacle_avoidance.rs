@@ -1,5 +1,5 @@
-use crate::environment::Obstacle;
 use crate::SimulationError;
+use crate::environment::Obstacle;
 use async_trait::async_trait;
 use nalgebra::Vector3;
 

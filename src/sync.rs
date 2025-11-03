@@ -1,6 +1,6 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64},
     Arc,
+    atomic::{AtomicBool, AtomicU64},
 };
 use tokio::sync::Barrier;
 

@@ -1,11 +1,11 @@
 #![allow(dead_code, unused_variables)]
+use crate::SimulationError;
 use crate::config;
 use crate::environment::Maze;
 use crate::planners::Trajectory;
 use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
 use crate::sync::WorkerSync;
-use crate::SimulationError;
 use chrono::Local;
 use colored::Colorize;
 use csv::Writer;
@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
-    fs::{create_dir_all, File},
+    fs::{File, create_dir_all},
     io::{self},
     path::PathBuf,
 };
@@ -551,7 +551,7 @@ pub fn log_data(
             .with_radii([0.025])
             .with_colors([rerun::Color::from([255, 255, 255, 128])]),
     )?;
-    
+
     // Log simple quadrotor representation using basic shapes
     // Center body (small sphere)
     rec.log(
@@ -560,22 +560,30 @@ pub fn log_data(
             .with_radii([0.025]) // Same size as desired position
             .with_colors([rerun::Color::from_rgb(100, 100, 100)]), // Dark gray vs white target
     )?;
-    
+
     // Four arms as thin cylinders at 45-degree angles
     let arm_length = 0.15;
     let cos45 = 0.7071;
-    for (i, (x, y)) in [(cos45, cos45), (-cos45, cos45), (-cos45, -cos45), (cos45, -cos45)].iter().enumerate() {
+    for (i, (x, y)) in [
+        (cos45, cos45),
+        (-cos45, cos45),
+        (-cos45, -cos45),
+        (cos45, -cos45),
+    ]
+    .iter()
+    .enumerate()
+    {
         // Draw arm as line strip from center to end
         rec.log(
             format!("world/quad/base_link/arm_{}", i),
             &rerun::LineStrips3D::new([vec![
                 (0.0, 0.0, 0.0),
-                (x * arm_length, y * arm_length, 0.0)
+                (x * arm_length, y * arm_length, 0.0),
             ]])
             .with_radii([0.005]) // 1cm diameter arms
             .with_colors([rerun::Color::from_rgb(80, 80, 80)]),
         )?;
-        
+
         // Propellers as spheres at arm ends
         rec.log(
             format!("world/quad/base_link/prop_{}", i),

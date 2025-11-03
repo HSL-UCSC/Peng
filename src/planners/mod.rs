@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::environment::Obstacle;
 use crate::quadrotor::QuadrotorState;
+use crate::{SimulationError, parse_uint};
 use crate::{parse_bool, parse_f32, parse_string, parse_vector3};
-use crate::{parse_uint, SimulationError};
 use async_trait::async_trait;
 use nalgebra::Vector3;
 

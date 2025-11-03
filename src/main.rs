@@ -12,14 +12,14 @@ use peng_quad::*;
 use quadrotor::build_quadrotor;
 use rerun::external::log;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use sync::WorkerSync;
 use tokio::sync::Barrier;
 
 use std::time::{Duration, Instant};
-use tokio::time::{sleep_until, Instant as TokioInstant};
+use tokio::time::{Instant as TokioInstant, sleep_until};
 
 #[tokio::main]
 /// Main function for the simulation

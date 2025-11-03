@@ -9,8 +9,8 @@ use tonic::transport::Endpoint;
 
 #[cfg(feature = "hyrl")]
 use crate::hyrl::{
-    obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient, DroneState, ModelType,
-    TrajectoryRequest, TrajectoryResponse,
+    DroneState, ModelType, TrajectoryRequest, TrajectoryResponse,
+    obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient,
 };
 use crate::planners::{MinimumSnapWaypointPlanner, Planner};
 
@@ -160,13 +160,13 @@ impl HyRLPlanner {
         // Calculate distance-proportional segment durations
         let mut distances = Vec::new();
         let mut total_distance = 0.0;
-        
+
         for i in 0..drone_waypoints.len() - 1 {
             let distance = (drone_waypoints[i + 1] - drone_waypoints[i]).norm();
             distances.push(distance);
             total_distance += distance;
         }
-        
+
         // Distribute total duration proportionally to segment distances
         let durations: Vec<f32> = distances
             .iter()
