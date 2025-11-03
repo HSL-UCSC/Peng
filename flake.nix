@@ -37,12 +37,15 @@
         treefmtEval = treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
-            rustfmt.enable = true;
+            rustfmt = {
+              enable = true;
+              package = fenixToolchain;
+            };
             nixpkgs-fmt.enable = true;
             taplo.enable = true;
             prettier.enable = true;
           };
-          settings.global.excludes = [ "target/" "logs/" "*.rrd" ];
+          settings.global.excludes = [ "target/" "logs/" "*.rrd" ".github/" ".vscode/" ];
         };
 
       in

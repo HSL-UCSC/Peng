@@ -33,6 +33,9 @@ jobs:
           
           # Install Nix with determinate installer (non-interactive)
           curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm
+          
+          # Add Nix to PATH for subsequent steps
+          echo "/nix/var/nix/profiles/default/bin" >> $GITHUB_PATH
 
       - name: Install Nix (Linux)
         if: runner.os == 'Linux'
@@ -42,16 +45,20 @@ jobs:
             experimental-features = nix-command flakes
           nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Cache Nix Store
-        uses: actions/cache@v3
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
         with:
-          path: |
-            /nix/store
-            /nix/var/nix
-            ~/.cache/nix
-          key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-keys: |
-            nix-${{ runner.os }}-
+          name: peng-hsl
+          # If you create a cachix cache, add the signing key as a repository secret
+          # signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
+          # For now, just use public cache
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      # Use well-known public caches for common dependencies
+      - name: Configure extra substituters
+        run: |
+          echo "extra-substituters = https://cache.nixos.org https://nix-community.cachix.org https://devenv.cachix.org" | sudo tee -a /etc/nix/nix.conf
+          echo "extra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=" | sudo tee -a /etc/nix/nix.conf
 
       - name: Install system dependencies (Linux only)
         if: runner.os == 'ubuntu-latest'
