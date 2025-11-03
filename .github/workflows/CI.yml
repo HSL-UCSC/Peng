@@ -36,6 +36,12 @@ jobs:
           
           # Add Nix to PATH for subsequent steps
           echo "/nix/var/nix/profiles/default/bin" >> $GITHUB_PATH
+          
+          # Configure binary caches
+          sudo mkdir -p /etc/nix
+          echo "experimental-features = nix-command flakes" | sudo tee -a /etc/nix/nix.conf
+          echo "substituters = https://cache.nixos.org https://hsl-peng.cachix.org https://nix-community.cachix.org https://devenv.cachix.org" | sudo tee -a /etc/nix/nix.conf
+          echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hsl-peng.cachix.org-1:${{ secrets.CACHIX_PUBLIC_KEY }} nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=" | sudo tee -a /etc/nix/nix.conf
 
       - name: Install Nix (Linux)
         if: runner.os == 'Linux'
@@ -43,19 +49,9 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org https://hsl-peng.cachix.org https://nix-community.cachix.org https://devenv.cachix.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hsl-peng.cachix.org-1:${{ secrets.CACHIX_PUBLIC_KEY }} nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
           nix_path: nixpkgs=channel:nixos-unstable
-
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v15
-        with:
-          name: hsl-peng
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
-      # Use well-known public caches for common dependencies
-      - name: Configure extra substituters
-        run: |
-          echo "extra-substituters = https://cache.nixos.org https://nix-community.cachix.org https://devenv.cachix.org" | sudo tee -a /etc/nix/nix.conf
-          echo "extra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=" | sudo tee -a /etc/nix/nix.conf
 
       - name: Install system dependencies (Linux only)
         if: runner.os == 'ubuntu-latest'
