@@ -552,21 +552,38 @@ pub fn log_data(
             .with_colors([rerun::Color::from([255, 255, 255, 128])]),
     )?;
     
-    // Log the drone mesh as a child of base_link so it transforms with the quadrotor
+    // Log simple quadrotor representation using basic shapes
+    // Center body (small sphere)
     rec.log(
-        "world/quad/base_link/drone_mesh",
-        &rerun::Asset3D::from_file("assets/starling.obj")
-            .map_err(|e| SimulationError::OtherError(format!("Failed to load drone mesh: {}", e)))?
-            .with_albedo_factor(*rerun::Color::from([200, 200, 200, 255])), // Light gray
+        "world/quad/base_link/body",
+        &rerun::Points3D::new([(0.0, 0.0, 0.0)])
+            .with_radii([0.025]) // Same size as desired position
+            .with_colors([rerun::Color::from_rgb(100, 100, 100)]), // Dark gray vs white target
     )?;
     
-    // Apply static rotation to the mesh (90 degrees around X-axis)
-    rec.log(
-        "world/quad/base_link/drone_mesh",
-        &rerun::Transform3D::from_rotation(
-            rerun::Quaternion::from_xyzw([0.7071, 0.0, 0.0, 0.7071]) // 90° around X
-        ),
-    )?;
+    // Four arms as thin cylinders at 45-degree angles
+    let arm_length = 0.15;
+    let cos45 = 0.7071;
+    for (i, (x, y)) in [(cos45, cos45), (-cos45, cos45), (-cos45, -cos45), (cos45, -cos45)].iter().enumerate() {
+        // Draw arm as line strip from center to end
+        rec.log(
+            format!("world/quad/base_link/arm_{}", i),
+            &rerun::LineStrips3D::new([vec![
+                (0.0, 0.0, 0.0),
+                (x * arm_length, y * arm_length, 0.0)
+            ]])
+            .with_radii([0.005]) // 1cm diameter arms
+            .with_colors([rerun::Color::from_rgb(80, 80, 80)]),
+        )?;
+        
+        // Propellers as spheres at arm ends
+        rec.log(
+            format!("world/quad/base_link/prop_{}", i),
+            &rerun::Points3D::new([(x * arm_length, y * arm_length, 0.0)])
+                .with_radii([0.03])
+                .with_colors([rerun::Color::from_rgb(50, 50, 200)]),
+        )?;
+    }
     rec.log(
         "world/quad/base_link",
         &rerun::Transform3D::from_translation_rotation(
