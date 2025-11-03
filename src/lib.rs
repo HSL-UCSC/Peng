@@ -796,8 +796,7 @@ impl PIDController {
             + kpid_pos[1].component_mul(&error_velocity)
             + kpid_pos[2].component_mul(&self.integral_pos_error);
 
-        let feedforward_acceleration = *feedforward_acceleration
-            .unwrap_or(&Vector3::zeros());
+        let feedforward_acceleration = *feedforward_acceleration.unwrap_or(&Vector3::zeros());
         let gravity_compensation = Vector3::new(0.0, 0.0, self.gravity);
         let total_acceleration = if self.feedforward {
             acceleration + gravity_compensation + feedforward_acceleration

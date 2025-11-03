@@ -325,7 +325,6 @@ fn smooth_yaws_along_path(
     target_yaw: f32,
     blend_distance: f32,
 ) -> Vec<f32> {
-
     let mut yaws = Vec::new();
     let mut distances = vec![0.0];
 
