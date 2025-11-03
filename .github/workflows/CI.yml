@@ -20,28 +20,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Nix (with cleanup on macOS)
-        if: runner.os == 'macOS'
-        run: |
-          # Clean up any existing nixbld users and groups
-          set +e  # Don't fail on errors
-          for i in {1..32}; do
-            sudo dscl . -delete /Users/_nixbld$i 2>/dev/null
-          done
-          sudo dscl . -delete /Groups/nixbld 2>/dev/null
-          set -e  # Re-enable failing on errors
-          
-          # Install Nix with determinate installer (non-interactive)
-          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm
-          
-          # Add Nix to PATH for subsequent steps
-          echo "/nix/var/nix/profiles/default/bin" >> $GITHUB_PATH
-          
-          # Configure binary caches
-          sudo mkdir -p /etc/nix
-          echo "experimental-features = nix-command flakes" | sudo tee -a /etc/nix/nix.conf
-          echo "substituters = https://cache.nixos.org https://hsl-peng.cachix.org https://nix-community.cachix.org https://devenv.cachix.org" | sudo tee -a /etc/nix/nix.conf
-          echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hsl-peng.cachix.org-1:${{ secrets.CACHIX_PUBLIC_KEY }} nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=" | sudo tee -a /etc/nix/nix.conf
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27 # Use the latest version available
+
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v12 # Use the latest version available
+        with:
+          name: your-cachix-cache-name # Replace with your actual Cachix cache name
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }} # Required for pushing to private or any cache
 
       - name: Install Nix (Linux)
         if: runner.os == 'Linux'
