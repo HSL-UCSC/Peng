@@ -75,7 +75,7 @@ The HyRL obstacle avoidance integration requires a server to be running. You hav
 nix develop
 hyrl-server
 
-# Terminal B - Run simulation  
+# Terminal B - Run simulation
 nix develop
 cargo run config/quad_hyrl.yaml
 ```
