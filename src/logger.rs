@@ -1,11 +1,11 @@
 #![allow(dead_code, unused_variables)]
-use crate::SimulationError;
 use crate::config;
 use crate::environment::Maze;
 use crate::planners::Trajectory;
 use crate::quadrotor::QuadrotorState;
 use crate::sensors::Camera;
 use crate::sync::WorkerSync;
+use crate::SimulationError;
 use chrono::Local;
 use colored::Colorize;
 use csv::Writer;
@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
-    fs::{File, create_dir_all},
+    fs::{create_dir_all, File},
     io::{self},
     path::PathBuf,
 };

@@ -8,8 +8,8 @@ use nalgebra::Matrix3;
 
 use crate::SimulationError;
 
-use serde::Deserialize;
 use serde::de::{self, Deserializer, Error};
+use serde::Deserialize;
 use serde_yaml::Value;
 
 #[derive(Clone, serde::Deserialize)]

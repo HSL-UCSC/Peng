@@ -9,8 +9,8 @@ use tonic::transport::Endpoint;
 
 #[cfg(feature = "hyrl")]
 use crate::hyrl::{
-    DroneState, ModelType, TrajectoryRequest, TrajectoryResponse,
-    obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient,
+    obstacle_avoidance_service_client::ObstacleAvoidanceServiceClient, DroneState, ModelType,
+    TrajectoryRequest, TrajectoryResponse,
 };
 use crate::planners::{MinimumSnapWaypointPlanner, Planner};
 

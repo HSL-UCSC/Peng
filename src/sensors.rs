@@ -5,9 +5,9 @@ use rand_distr::{Distribution, Normal};
 use rayon::prelude::*;
 use rayon::slice::ParallelSliceMut;
 
-use crate::SimulationError;
 use crate::environment::Maze;
 use crate::fast_sqrt;
+use crate::SimulationError;
 
 /// Represents an Inertial Measurement Unit (IMU) with bias and noise characteristics
 /// # Example

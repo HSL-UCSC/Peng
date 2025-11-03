@@ -1,8 +1,8 @@
 #![allow(clippy::all, dead_code, unused_variables)]
-use crate::SimulationError;
 use crate::config::{Betaflight, QuadrotorConfig, SimulationConfig};
 use crate::quadrotor::{OrientationFilter, QuadrotorInterface, QuadrotorState};
-use cyber_rc::{CyberRCMessageType, Writer, cyberrc};
+use crate::SimulationError;
+use cyber_rc::{cyberrc, CyberRCMessageType, Writer};
 use nalgebra::{UnitQuaternion, Vector3};
 use std::f32::consts::PI;
 use std::time::Duration;

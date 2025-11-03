@@ -1,8 +1,8 @@
-use crate::SimulationError;
 use crate::config::{LiftoffQuadrotorConfig, SimulationConfig};
 use crate::quadrotor::{OrientationFilter, QuadrotorInterface, QuadrotorState, State};
-use binrw::{BinRead, binrw};
-use cyber_rc::{Writer, cyberrc};
+use crate::SimulationError;
+use binrw::{binrw, BinRead};
+use cyber_rc::{cyberrc, Writer};
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use std::collections::VecDeque;
 use tokio::sync::watch;
