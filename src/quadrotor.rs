@@ -110,6 +110,12 @@ pub struct OrientationFilter {
     buffer: VecDeque<UnitQuaternion<f32>>,
 }
 
+impl Default for OrientationFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OrientationFilter {
     pub fn new() -> Self {
         Self {
@@ -148,7 +154,7 @@ impl OrientationFilter {
 
             // Step 3: apply average back to mean
             let delta_mean = nalgebra::UnitQuaternion::from_scaled_axis(sum);
-            mean = mean * delta_mean;
+            mean *= delta_mean;
 
             // Early exit if update is very small
             if sum.norm() < 1e-6 {

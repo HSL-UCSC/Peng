@@ -718,7 +718,6 @@ impl PIDController {
     // //TODO: move this out of doctest
     /// // let control_torques = pid.compute_attitude_control(&desired_orientation, &current_orientation, &current_angular_velocity, dt);
     /// ```
-
     pub async fn compute_attitude_control(
         &mut self,
         desired_orientation: &UnitQuaternion<f32>,
@@ -774,6 +773,7 @@ impl PIDController {
     /// //TODO: move this out of doctest
     /// // let (thrust, desired_orientation) = pid.compute_position_control(&desired_position, &desired_velocity, desired_yaw, &current_position, &current_velocity, dt);
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn compute_position_control(
         &mut self,
         desired_position: &Vector3<f32>,
@@ -796,9 +796,8 @@ impl PIDController {
             + kpid_pos[1].component_mul(&error_velocity)
             + kpid_pos[2].component_mul(&self.integral_pos_error);
 
-        let feedforward_acceleration = feedforward_acceleration
-            .unwrap_or(&Vector3::zeros())
-            .clone();
+        let feedforward_acceleration = *feedforward_acceleration
+            .unwrap_or(&Vector3::zeros());
         let gravity_compensation = Vector3::new(0.0, 0.0, self.gravity);
         let total_acceleration = if self.feedforward {
             acceleration + gravity_compensation + feedforward_acceleration

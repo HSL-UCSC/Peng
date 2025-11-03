@@ -19,7 +19,6 @@ use sync::WorkerSync;
 use tokio::sync::Barrier;
 
 use std::time::{Duration, Instant};
-use tokio::time::{sleep_until, Instant as TokioInstant};
 
 #[tokio::main]
 /// Main function for the simulation
@@ -219,7 +218,7 @@ fn quadrotor_worker(
             config.pid_controller.att_max_int,
             mass,
             config.simulation.gravity,
-            config.pid_controller.feedforward.unwrap_or_else(|| false),
+            config.pid_controller.feedforward.unwrap_or(false),
         )
         .await;
         let mut controller = controller.lock().await;
@@ -360,7 +359,7 @@ fn clock_handle(
         }
     }
     tokio::spawn(async move {
-        let sim_duration = config.duration;
+        let _sim_duration = config.duration;
         let start_time = tokio::time::Instant::now();
         let period = 1f64 / config.simulation_frequency as f64;
         let period_duration = tokio::time::Duration::from_secs_f64(period);
@@ -371,7 +370,7 @@ fn clock_handle(
 
         while !sync.kill.load(Ordering::Relaxed) {
             let now = tokio::time::Instant::now();
-            let elapsed = now.duration_since(last_tick_time).as_secs_f64();
+            let _elapsed = now.duration_since(last_tick_time).as_secs_f64();
             last_tick_time = now;
             sync.start_barrier.wait().await;
             if now > next_frame {

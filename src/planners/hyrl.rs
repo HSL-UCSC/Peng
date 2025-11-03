@@ -2,8 +2,6 @@ use super::TrajectoryPoint;
 use crate::SimulationError;
 use async_trait::async_trait;
 use nalgebra::Vector3;
-use std::collections::VecDeque;
-use std::f32::consts::PI;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 
@@ -119,6 +117,7 @@ impl HyRLPlanner {
     // The HyRL Planner maintains an inner minimum snap planner.
     // On creation, it requests a trajectory from the HyRL server and initializes the minimum snap
     // planner with the waypoints and yaw angles.
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         start_position: Vector3<f32>,
         start_yaw: f32,
@@ -155,7 +154,7 @@ impl HyRLPlanner {
         // TODO: remove or put this flag behind a debug option
         println!("Drone Waypoints: {:?}", drone_waypoints);
 
-        let mut yaws = smooth_yaws_along_path(&drone_waypoints, start_yaw, 0.3);
+        let yaws = smooth_yaws_along_path(&drone_waypoints, start_yaw, 0.3);
 
         // Calculate distance-proportional segment durations
         let mut distances = Vec::new();
@@ -189,7 +188,7 @@ impl HyRLPlanner {
             client,
             minimum_snap_planner: MinimumSnapWaypointPlanner::new(
                 drone_waypoints,
-                yaws.into(),
+                yaws,
                 durations,
                 start_time,
             )?,
@@ -326,7 +325,6 @@ fn smooth_yaws_along_path(
     target_yaw: f32,
     blend_distance: f32,
 ) -> Vec<f32> {
-    use nalgebra::Vector3;
 
     let mut yaws = Vec::new();
     let mut distances = vec![0.0];

@@ -563,7 +563,7 @@ pub fn log_data(
 
     // Four arms as thin cylinders at 45-degree angles
     let arm_length = 0.15;
-    let cos45 = 0.7071;
+    let cos45 = std::f32::consts::FRAC_1_SQRT_2;
     for (i, (x, y)) in [
         (cos45, cos45),
         (-cos45, cos45),

@@ -4,7 +4,6 @@ use crate::SimulationError;
 use binrw::{binrw, BinRead};
 use cyber_rc::{cyberrc, Writer};
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
-use std::collections::VecDeque;
 use tokio::sync::watch;
 use tokio::time::Duration;
 

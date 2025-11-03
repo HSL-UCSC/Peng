@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::environment::Obstacle;
 use crate::quadrotor::QuadrotorState;
-use crate::{parse_bool, parse_f32, parse_string, parse_vector3};
+use crate::{parse_f32, parse_string, parse_vector3};
 use crate::{parse_uint, SimulationError};
 use async_trait::async_trait;
 use nalgebra::Vector3;
@@ -286,7 +286,7 @@ impl PlannerManager {
     /// let planner_manager = PlannerManager::new(&planner_config, initial_position, initial_yaw);
     /// ```
     pub async fn new(
-        planner_config: &Vec<PlannerStepConfig>,
+        planner_config: &[PlannerStepConfig],
         initial_position: Vector3<f32>,
         initial_yaw: f32,
     ) -> Result<Self, SimulationError> {
@@ -298,7 +298,7 @@ impl PlannerManager {
         let mut eager_planners: HashMap<u32, HyRLPlanner> = HashMap::new();
 
         // TODO: use the planner index instead of the time/step as the key
-        for (i, config) in planner_config.iter().enumerate() {
+        for config in planner_config.iter() {
             let params = config.params.clone();
             match config.planner_type.as_str() {
                 "HyRL" => {
@@ -543,7 +543,7 @@ impl PlannerManager {
             }
             #[cfg(feature = "hyrl")]
             "HyRL" => {
-                let url = parse_string(params, "url")?;
+                let _url = parse_string(params, "url")?;
                 let key: u32 = step
                     .step
                     .map(|s| s as u32)
