@@ -57,9 +57,21 @@ jobs:
         if: runner.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
 
+      - name: Clean Nix cache if corrupted
+        if: failure()
+        run: |
+          rm -rf ~/.cache/nix/gitv3 || true
+          nix-collect-garbage || true
+
       - name: Enter Nix flake shell & Build
         run: |
-          nix develop --command cargo build --verbose
+          # Try build, clean cache on failure and retry once
+          nix develop --command cargo build --verbose || (
+            echo "Build failed, cleaning git cache and retrying..."
+            rm -rf ~/.cache/nix/gitv3 || true
+            nix-collect-garbage || true
+            nix develop --command cargo build --verbose
+          )
 
       - name: Run Tests
         run: |
