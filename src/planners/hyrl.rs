@@ -141,7 +141,6 @@ impl HyRLPlanner {
                 model_type,
             )
             .await?;
-        println!("Drone States: {:?}", drone_states);
         if drone_states.len() < 2 {
             return Err(SimulationError::OtherError(
                 "HyRL returned <2 waypoints".into(),
@@ -153,14 +152,32 @@ impl HyRLPlanner {
             .iter()
             .map(|state| Vector3::new(state.x - 1.5, state.y, start_position[2]))
             .collect();
+        // TODO: remove or put this flag behind a debug option
         println!("Drone Waypoints: {:?}", drone_waypoints);
 
         let mut yaws = smooth_yaws_along_path(&drone_waypoints, start_yaw, 0.3);
-        // uncomment this line to use a constant yaw of 0.0
-        // let mut yaws: Vec<f32> = drone_waypoints.iter().map(|_| 0.0).collect();
 
-        let segment_duration = duration / (drone_waypoints.len() - 1) as f32;
-        let durations = vec![segment_duration; drone_waypoints.len() - 1];
+        // Calculate distance-proportional segment durations
+        let mut distances = Vec::new();
+        let mut total_distance = 0.0;
+        
+        for i in 0..drone_waypoints.len() - 1 {
+            let distance = (drone_waypoints[i + 1] - drone_waypoints[i]).norm();
+            distances.push(distance);
+            total_distance += distance;
+        }
+        
+        // Distribute total duration proportionally to segment distances
+        let durations: Vec<f32> = distances
+            .iter()
+            .map(|&distance| {
+                if total_distance > 0.0 {
+                    duration * (distance / total_distance)
+                } else {
+                    duration / distances.len() as f32 // Fallback for zero distance
+                }
+            })
+            .collect();
 
         Ok(Self {
             start_position,
