@@ -48,10 +48,7 @@ jobs:
       - name: Setup Cachix
         uses: cachix/cachix-action@v15
         with:
-          name: peng-hsl
-          # If you create a cachix cache, add the signing key as a repository secret
-          # signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-          # For now, just use public cache
+          name: hsl-peng
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       # Use well-known public caches for common dependencies
