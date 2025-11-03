@@ -20,21 +20,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Clean potential corrupted git caches
-        run: |
-          # Clean any potential corrupted git caches before Nix operations
-          sudo rm -rf /nix/var/nix/gcroots/auto/* || true
-          sudo rm -rf ~/.cache/nix || true
-          rm -rf ~/.cache/nix || true
-
       - name: Install Nix
-        uses: cachix/install-nix-action@v27
+        uses: cachix/install-nix-action@v26
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
-            substituters = https://cache.nixos.org https://hsl-peng.cachix.org https://nix-community.cachix.org https://devenv.cachix.org
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hsl-peng.cachix.org-1:${{ secrets.CACHIX_PUBLIC_KEY }} nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
-          nix_path: nixpkgs=channel:nixos-unstable
 
 
       - name: Install system dependencies (Linux only)
