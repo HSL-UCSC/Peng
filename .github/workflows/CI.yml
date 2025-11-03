@@ -65,13 +65,11 @@ jobs:
 
       - name: Enter Nix flake shell & Build
         run: |
-          # Try build, clean cache on failure and retry once
-          nix develop --command cargo build --verbose || (
-            echo "Build failed, cleaning git cache and retrying..."
-            rm -rf ~/.cache/nix/gitv3 || true
-            nix-collect-garbage || true
-            nix develop --command cargo build --verbose
-          )
+          # Clean all Nix caches and update flake inputs to avoid git corruption
+          rm -rf ~/.cache/nix || true
+          nix-collect-garbage || true
+          nix flake update --commit-lock-file || nix flake lock --update-input hyrl
+          nix develop --command cargo build --verbose
 
       - name: Run Tests
         run: |
