@@ -97,7 +97,7 @@ planner_schedule:
   #     end_yaw: 0 # Target end yaw angle (rad)
   #     duration: 10.0 # Duration of the trajectory (s)
 
-  # # Minimum Snap Waypoint trajectory
+  # # HyRL Obstacle Avoidance Trajectory
   # - time: 15.0
   #   planner_type: HyRL
   #   params:
