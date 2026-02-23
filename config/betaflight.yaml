@@ -87,39 +87,29 @@ planner_schedule:
       end_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
       target_yaw: 0.0 # Target end yaw angle (rad)
 
-  # # Minimum Jerk Line trajectory
-  # - time: 9.0 # Simulation step in ms to start this planner
-  #   planner_type: MinimumJerkLine
-  #   params:
-  #     start_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
-  #     start_yaw: 0.0
-  #     end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
-  #     end_yaw: 0 # Target end yaw angle (rad)
-  #     duration: 10.0 # Duration of the trajectory (s)
+  # Minimum Jerk Line trajectory
+  - time: 5.0 # Simulation step in ms to start this planner
+    planner_type: MinimumJerkLine
+    params:
+      start_position: [0.0, 0.0, 0.5] # Target end position [x, y, z] (m)
+      start_yaw: 0.0
+      end_position: [-1.5, 0.0, 0.5] # Target end position [x, y, z] (m)
+      end_yaw: 0 # Target end yaw angle (rad)
+      duration: 10.0 # Duration of the trajectory (s)
 
-  # # HyRL Obstacle Avoidance Trajectory
-  # - time: 15.0
-  #   planner_type: HyRL
-  #   params:
-  #     start_yaw: 0.0
-  #     num_waypoints: 500
-  #     url: http://172.26.45.187:50052
-  #     start_position: [-1.5, 0.0, 0.5]
-  #     target_position: [3.5, 0.0, 0.5]
-  #     duration: 30.0
-
-  # # Circular trajectory
-  # - time: 30.0
-  #   planner_type: Circle
-  #   params:
-  #     center: [0.0, 0.0, 0.5] # Center of the circle [x, y, z] (m)
-  #     radius: 1.0 # Radius of the circle (m)
-  #     angular_velocity: 0.35 # Angular velocity (rad/s)
-  #     duration: 60.0 # Duration of the trajectory (s)
-  #     ramp_time: 5 # Time for smooth transition (s)
+  # HyRL Obstacle Avoidance Trajectory
+  - time: 15.0
+    planner_type: HyRL
+    params:
+      start_yaw: 0.0
+      num_waypoints: 500
+      url: http://172.26.45.187:50052
+      start_position: [-1.5, 0.0, 0.5]
+      target_position: [3.5, 0.0, 0.5]
+      duration: 30.0
 
   # Landing trajectory
-  - time: 120.0
+  - time: 45.0
     planner_type: Landing
     params:
       duration: 5.0 # Duration of the landing maneuver (s)

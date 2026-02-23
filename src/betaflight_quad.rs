@@ -7,6 +7,8 @@ use nalgebra::{UnitQuaternion, Vector3};
 use std::time::Duration;
 #[cfg(feature = "vicon")]
 use vicon_sys::HasViconHardware;
+use tokio::sync::watch;
+use std::f32::consts::PI;
 
 /// Represents a physical quadrotor running a Betaflight controller.
 pub struct BetaflightQuad {
