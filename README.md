@@ -46,7 +46,7 @@ Once Nix is installed, you can clone this repo, and enter a development shell wi
 git clone git@github.com:HSL-UCSC/Peng.git
 ```
 
-- Enter a Nix shell:
+- Enter a Nix shell at the root of this repo:
 
 ```bash
 nix develop
